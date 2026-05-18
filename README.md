@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# hedging-pair
 
-## Getting Started
+Prop firm trade journal (Next.js): identities, challenges, trades, hedge pairs, CSV workspace sync, and JSON backup on the **Data** page.
 
-First, run the development server:
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Publish to GitHub (repo name: `hedging-pair`)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+With [GitHub CLI](https://cli.github.com/) installed and logged in (`gh auth login`):
 
-## Learn More
+```bash
+gh repo create hedging-pair --public --source=. --remote=origin --push
+```
 
-To learn more about Next.js, take a look at the following resources:
+Or create an empty repo **hedging-pair** on GitHub, then:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+git remote add origin https://github.com/YOUR_USER/hedging-pair.git
+git push -u origin main
+```
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Import this repo in [Vercel](https://vercel.com/new) (framework: Next.js). For a custom domain, add it under Project → **Settings** → **Domains** and set the DNS records Vercel shows at your registrar.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See [Next.js deployment](https://nextjs.org/docs/app/building-your-application/deploying) for details.
