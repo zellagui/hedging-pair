@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  /** Use this app folder as the Turbopack root when a parent directory has another lockfile. */
+  turbopack: {
+    root: process.cwd(),
+  },
 };
 
 export default nextConfig;
