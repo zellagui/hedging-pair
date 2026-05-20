@@ -119,3 +119,14 @@ export function parseTradeLogBackupJsonText(
 export function formatJournalSliceSummary(slice: PersistedTradeLogSlice): string {
   return `${slice.identities.length} workspace${slice.identities.length === 1 ? "" : "s"}, ${slice.challenges.length} challenge${slice.challenges.length === 1 ? "" : "s"}, ${slice.trades.length} trade leg${slice.trades.length === 1 ? "" : "s"}`;
 }
+
+/** Higher = more journal content (used to pick the best blob when several exist). */
+export function scoreJournalSliceRichness(slice: PersistedTradeLogSlice): number {
+  return (
+    slice.identities.length +
+    slice.challenges.length +
+    slice.trades.length +
+    slice.pairs.length +
+    slice.sessions.length
+  );
+}

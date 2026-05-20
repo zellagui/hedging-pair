@@ -392,9 +392,11 @@ export async function pullCloudJournalForce(): Promise<CloudSyncBootstrapResult>
   }
 
   if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
+  const src =
+    cloud.fromLegacy ? " (from legacy backup file in Blob)" : "";
   return {
     ok: true,
-    message: `Journal pulled from the cloud. Now: ${summaryAfterLoad()}.`,
+    message: `Journal pulled from the cloud${src}. Now: ${summaryAfterLoad()}.`,
   };
 }
 
