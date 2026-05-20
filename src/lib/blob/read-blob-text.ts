@@ -10,10 +10,7 @@ export async function readBlobJsonText(
       return null;
     }
     return await new Response(result.stream).text();
-  } catch (e) {
-    if (e instanceof Error && e.name === "BlobNotFoundError") {
-      return null;
-    }
-    throw e;
+  } catch {
+    return null;
   }
 }

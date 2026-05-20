@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  formatJournalSliceSummary,
   parseTradeLogBackupJsonText,
   serializeTradeLogBackup,
 } from "@/models/trade-log/backup-io";
@@ -153,8 +154,14 @@ export async function fetchCloudJournalBackup(): Promise<
   if (!parsed.ok) {
     return { ok: false, status: 500, error: parsed.error };
   }
-  const fromLegacy = res.headers.get("X-Journal-From-Legacy") === "1";
+  const fromLegacy =
+    parsed.fromLegacy === true ||
+    res.headers.get("X-Journal-From-Legacy") === "1";
   return { ok: true, text, exportedAt: parsed.exportedAt, fromLegacy };
+}
+
+function summaryAfterLoad(): string {
+  return formatJournalSliceSummary(persistedSliceSnapshot());
 }
 
 /** Copy legacy blob into journal/main.json after a successful load. */
@@ -286,15 +293,13 @@ export async function bootstrapTradeLogCloudSync(): Promise<CloudSyncBootstrapRe
       }
       return {
         ok: true,
-        message: `Loaded legacy backup and saved as journal/main.json (${new Date(migrated.exportedAt).toLocaleString()}).`,
+        message: `Loaded legacy backup → journal/main.json. Now: ${summaryAfterLoad()}.`,
       };
     }
     if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
     return {
       ok: true,
-      message: cloud.exportedAt
-        ? `Journal loaded from the cloud (${new Date(cloud.exportedAt).toLocaleString()}).`
-        : "Journal loaded from the cloud.",
+      message: `Journal loaded from the cloud. Now: ${summaryAfterLoad()}.`,
     };
   }
 
@@ -382,17 +387,20 @@ export async function pullCloudJournalForce(): Promise<CloudSyncBootstrapResult>
     }
     return {
       ok: true,
-      message: `Pulled legacy backup and saved as journal/main.json (${new Date(migrated.exportedAt).toLocaleString()}).`,
+      message: `Pulled legacy backup → journal/main.json. Now: ${summaryAfterLoad()}.`,
     };
   }
 
   if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
   return {
     ok: true,
-    message: cloud.exportedAt
-      ? `Journal pulled from the cloud (${new Date(cloud.exportedAt).toLocaleString()}).`
-      : "Journal pulled from the cloud.",
+    message: `Journal pulled from the cloud. Now: ${summaryAfterLoad()}.`,
   };
+}
+
+/** Save token: always load cloud into this browser (ignores merge). */
+export async function connectCloudJournalFromSavedToken(): Promise<CloudSyncBootstrapResult> {
+  return pullCloudJournalForce();
 }
 
 export async function flushTradeLogCloudSyncNow(): Promise<

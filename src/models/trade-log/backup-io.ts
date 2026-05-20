@@ -17,6 +17,8 @@ export type TradeLogBackupFileShape = {
   challenges?: unknown;
   identities?: unknown;
   activeIdentityId?: string | null;
+  /** Set by /api/journal when serving a legacy blob path (stripped before hydrate). */
+  journalSyncMeta?: { fromLegacy?: boolean };
 };
 
 function asUnknownArray(v: unknown): unknown[] {
@@ -54,7 +56,9 @@ export function serializeTradeLogBackup(
 export function parseTradeLogBackupJsonText(
   text: string,
   opts?: { maxBackupVersion?: number }
-): { ok: true; slice: PersistedTradeLogSlice; exportedAt?: string } | { ok: false; error: string } {
+):
+  | { ok: true; slice: PersistedTradeLogSlice; exportedAt?: string; fromLegacy?: boolean }
+  | { ok: false; error: string } {
   let raw: unknown;
   try {
     raw = JSON.parse(text) as unknown;
@@ -65,6 +69,7 @@ export function parseTradeLogBackupJsonText(
     return { ok: false, error: "Backup root must be a JSON object." };
   }
   const o = raw as TradeLogBackupFileShape;
+  const fromLegacy = o.journalSyncMeta?.fromLegacy === true;
 
   const maxV = opts?.maxBackupVersion ?? STORAGE_VERSION;
   if (typeof o.version === "number" && o.version > maxV) {
@@ -107,5 +112,10 @@ export function parseTradeLogBackupJsonText(
     ok: true,
     slice,
     exportedAt: typeof o.exportedAt === "string" ? o.exportedAt : undefined,
+    fromLegacy,
   };
+}
+
+export function formatJournalSliceSummary(slice: PersistedTradeLogSlice): string {
+  return `${slice.identities.length} workspace${slice.identities.length === 1 ? "" : "s"}, ${slice.challenges.length} challenge${slice.challenges.length === 1 ? "" : "s"}, ${slice.trades.length} trade leg${slice.trades.length === 1 ? "" : "s"}`;
 }

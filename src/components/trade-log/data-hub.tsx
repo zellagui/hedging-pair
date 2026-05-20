@@ -33,7 +33,7 @@ import {
   useTradingStore,
 } from "@/models/trade-log/store";
 import {
-  bootstrapTradeLogCloudSync,
+  connectCloudJournalFromSavedToken,
   flushTradeLogCloudSyncNow,
   getCloudSyncEnabled,
   getCloudSyncToken,
@@ -184,7 +184,7 @@ export function DataHub() {
                   setCloudEnabled(true);
                   setCloudErr(null);
                   setCloudOk(null);
-                  const result = await bootstrapTradeLogCloudSync();
+                  const result = await connectCloudJournalFromSavedToken();
                   setLastCloudIso(getLastCloudSavedIso());
                   if (result.ok) {
                     setCloudOk(result.message);
@@ -194,6 +194,11 @@ export function DataHub() {
                     setCloudOk(null);
                   }
                   router.refresh();
+                  if (result.ok && typeof window !== "undefined") {
+                    window.alert(
+                      `${result.message}\n\nOpen Overview to see your journal.`
+                    );
+                  }
                 })
               }
             >
@@ -268,11 +273,13 @@ export function DataHub() {
           </div>
           <p className="text-xs text-muted-foreground">
             Status:{" "}
-            {!cloudEnabled
-              ? "Not configured"
-              : lastCloudIso != null
-                ? `Last synced ${new Date(lastCloudIso).toLocaleString()}`
-                : "No cloud save yet"}
+            {busy
+              ? "Syncing with cloud…"
+              : !cloudEnabled
+                ? "Not configured"
+                : lastCloudIso != null
+                  ? `Last synced ${new Date(lastCloudIso).toLocaleString()}`
+                  : "No cloud save yet"}
           </p>
           {cloudOk != null ? (
             <p className="text-xs text-green-600 dark:text-green-400">{cloudOk}</p>

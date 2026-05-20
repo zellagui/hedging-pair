@@ -2,10 +2,10 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
 import {
-  getLegacyJournalBlobPath,
-  JOURNAL_BLOB_PATH,
-} from "@/lib/blob/journal-paths";
-import { readBlobJsonText } from "@/lib/blob/read-blob-text";
+  discoverJournalBackupInBlob,
+  wrapJournalBackupWithSyncMeta,
+} from "@/lib/blob/discover-journal-backup";
+import { JOURNAL_BLOB_PATH } from "@/lib/blob/journal-paths";
 import { getBlobReadWriteToken, getJournalSyncSecret } from "@/lib/env/journal-sync";
 import {
   buildTradeLogBackupPayload,
@@ -13,6 +13,7 @@ import {
 } from "@/models/trade-log/backup-io";
 
 const LEGACY_SOURCE_HEADER = "X-Journal-From-Legacy";
+const BLOB_PATH_HEADER = "X-Journal-Blob-Path";
 
 function checkAuth(request: Request):
   | { ok: true }
@@ -66,26 +67,25 @@ export async function GET(request: Request) {
   }
 
   try {
-    let text = await readBlobJsonText(JOURNAL_BLOB_PATH);
-    let fromLegacy = false;
-
-    if (text == null) {
-      text = await readBlobJsonText(getLegacyJournalBlobPath());
-      fromLegacy = text != null;
-    }
-
-    if (text == null) {
+    const found = await discoverJournalBackupInBlob();
+    if (found == null) {
       return new NextResponse(null, { status: 404 });
     }
 
+    const body = wrapJournalBackupWithSyncMeta(found.text, {
+      fromLegacy: found.fromLegacy,
+      pathname: found.pathname,
+    });
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      [BLOB_PATH_HEADER]: found.pathname,
     };
-    if (fromLegacy) {
+    if (found.fromLegacy) {
       headers[LEGACY_SOURCE_HEADER] = "1";
     }
 
-    return new NextResponse(text, { status: 200, headers });
+    return new NextResponse(body, { status: 200, headers });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Could not read cloud journal.";
     return NextResponse.json({ error: msg }, { status: 500 });
