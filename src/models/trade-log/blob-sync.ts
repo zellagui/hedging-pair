@@ -125,7 +125,7 @@ function parseExportedAtMs(iso?: string): number {
 }
 
 export async function fetchCloudJournalBackup(): Promise<
-  | { ok: true; text: string; exportedAt?: string }
+  | { ok: true; text: string; exportedAt?: string; fromLegacy?: boolean }
   | { ok: false; status: number; error: string }
 > {
   const headers = authHeaders();
@@ -153,7 +153,15 @@ export async function fetchCloudJournalBackup(): Promise<
   if (!parsed.ok) {
     return { ok: false, status: 500, error: parsed.error };
   }
-  return { ok: true, text, exportedAt: parsed.exportedAt };
+  const fromLegacy = res.headers.get("X-Journal-From-Legacy") === "1";
+  return { ok: true, text, exportedAt: parsed.exportedAt, fromLegacy };
+}
+
+/** Copy legacy blob into journal/main.json after a successful load. */
+async function migrateLegacyBlobToCanonical(): Promise<
+  { ok: true; exportedAt: string } | { ok: false; error: string }
+> {
+  return pushCloudJournalBackup(persistedSliceSnapshot());
 }
 
 export async function pushCloudJournalBackup(
@@ -268,6 +276,19 @@ export async function bootstrapTradeLogCloudSync(): Promise<CloudSyncBootstrapRe
       const err = lastCloudSyncError ?? "Could not load cloud backup.";
       return { ok: false, message: err };
     }
+    if (cloud.fromLegacy) {
+      const migrated = await migrateLegacyBlobToCanonical();
+      if (!migrated.ok) {
+        return {
+          ok: false,
+          message: `Loaded legacy backup but migration failed: ${migrated.error}`,
+        };
+      }
+      return {
+        ok: true,
+        message: `Loaded legacy backup and saved as journal/main.json (${new Date(migrated.exportedAt).toLocaleString()}).`,
+      };
+    }
     if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
     return {
       ok: true,
@@ -282,6 +303,19 @@ export async function bootstrapTradeLogCloudSync(): Promise<CloudSyncBootstrapRe
     if (!applied) {
       const err = lastCloudSyncError ?? "Could not load cloud backup.";
       return { ok: false, message: err };
+    }
+    if (cloud.fromLegacy) {
+      const migrated = await migrateLegacyBlobToCanonical();
+      if (!migrated.ok) {
+        return {
+          ok: false,
+          message: `Loaded legacy backup but migration failed: ${migrated.error}`,
+        };
+      }
+      return {
+        ok: true,
+        message: `Cloud legacy backup was newer — migrated to journal/main.json (${new Date(migrated.exportedAt).toLocaleString()}).`,
+      };
     }
     if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
     return {
@@ -309,6 +343,55 @@ export async function bootstrapTradeLogCloudSync(): Promise<CloudSyncBootstrapRe
     message: cloud.exportedAt
       ? `Already in sync (${new Date(cloud.exportedAt).toLocaleString()}).`
       : "Already in sync with the cloud.",
+  };
+}
+
+/** Always apply cloud backup to this browser (ignores local timestamps). */
+export async function pullCloudJournalForce(): Promise<CloudSyncBootstrapResult> {
+  if (getCloudSyncToken() == null) {
+    return { ok: false, message: "Sync token is not set." };
+  }
+  if (getActiveWorkspaceCsvRoot() != null) {
+    return {
+      ok: false,
+      message:
+        "Cloud sync is paused while a CSV folder is linked. Unlink the folder on this page first.",
+    };
+  }
+
+  lastCloudSyncError = null;
+  const cloud = await fetchCloudJournalBackup();
+  if (!cloud.ok) {
+    lastCloudSyncError = cloud.error;
+    return { ok: false, message: cloud.error };
+  }
+
+  const applied = await applyCloudText(cloud.text);
+  if (!applied) {
+    const err = lastCloudSyncError ?? "Could not load cloud backup.";
+    return { ok: false, message: err };
+  }
+
+  if (cloud.fromLegacy) {
+    const migrated = await migrateLegacyBlobToCanonical();
+    if (!migrated.ok) {
+      return {
+        ok: false,
+        message: `Loaded legacy backup but migration failed: ${migrated.error}`,
+      };
+    }
+    return {
+      ok: true,
+      message: `Pulled legacy backup and saved as journal/main.json (${new Date(migrated.exportedAt).toLocaleString()}).`,
+    };
+  }
+
+  if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
+  return {
+    ok: true,
+    message: cloud.exportedAt
+      ? `Journal pulled from the cloud (${new Date(cloud.exportedAt).toLocaleString()}).`
+      : "Journal pulled from the cloud.",
   };
 }
 

@@ -35,8 +35,8 @@ See [Next.js deployment](https://nextjs.org/docs/app/building-your-application/d
 ### Cloud sync (Vercel Blob)
 
 1. In the Vercel project, open **Storage** and connect a Blob store (e.g. `hedging-pair-blob`).
-2. Under **Settings → Environment Variables**, set `journal_sync_secret` to a long random string (Production + Preview). `blob_read_write_token` is usually added when the store is linked. Uppercase names (`JOURNAL_SYNC_SECRET`, `BLOB_READ_WRITE_TOKEN`) also work locally.
-3. Redeploy.
-4. In the app, go to **Data → Cloud sync**, paste the same secret, and save. Changes sync automatically to `journal/main.json` in Blob.
+2. Under **Settings → Environment Variables**, set `journal_sync_secret` to a long random string (Production + Preview). Use `BLOB_READ_WRITE_TOKEN` from the linked Blob store (`blob_read_write_token` or `blob_token` also work). Do not rely on a custom `blob_token` unless it is the real read-write token value.
+3. Redeploy after any env change.
+4. In the app, go to **Data → Cloud sync**, paste the same secret, and **Save token**. The live file is `journal/main.json`. An older `trade-log-backup-*.json` in Storage is imported once and copied to `journal/main.json`. Use **Pull from cloud** to overwrite this browser from Blob; **Sync now** uploads local data.
 
 Copy [`.env.example`](.env.example) to `.env.local` for local development with the same variables.

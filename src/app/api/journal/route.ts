@@ -1,13 +1,18 @@
-import { get, put } from "@vercel/blob";
+import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
+import {
+  getLegacyJournalBlobPath,
+  JOURNAL_BLOB_PATH,
+} from "@/lib/blob/journal-paths";
+import { readBlobJsonText } from "@/lib/blob/read-blob-text";
 import { getBlobReadWriteToken, getJournalSyncSecret } from "@/lib/env/journal-sync";
 import {
   buildTradeLogBackupPayload,
   parseTradeLogBackupJsonText,
 } from "@/models/trade-log/backup-io";
 
-const JOURNAL_BLOB_PATH = "journal/main.json";
+const LEGACY_SOURCE_HEADER = "X-Journal-From-Legacy";
 
 function checkAuth(request: Request):
   | { ok: true }
@@ -45,7 +50,7 @@ function blobNotConfigured(): NextResponse {
   return NextResponse.json(
     {
       error:
-        "Cloud storage is not configured. Link a Blob store to this project and set blob_read_write_token.",
+        "Cloud storage is not configured. Link a Blob store and set BLOB_READ_WRITE_TOKEN (or blob_read_write_token).",
     },
     { status: 503 }
   );
@@ -61,19 +66,27 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await get(JOURNAL_BLOB_PATH, { access: "public" });
-    if (result == null || result.statusCode === 304) {
+    let text = await readBlobJsonText(JOURNAL_BLOB_PATH);
+    let fromLegacy = false;
+
+    if (text == null) {
+      text = await readBlobJsonText(getLegacyJournalBlobPath());
+      fromLegacy = text != null;
+    }
+
+    if (text == null) {
       return new NextResponse(null, { status: 404 });
     }
-    const text = await new Response(result.stream).text();
-    return new NextResponse(text, {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (fromLegacy) {
+      headers[LEGACY_SOURCE_HEADER] = "1";
+    }
+
+    return new NextResponse(text, { status: 200, headers });
   } catch (e) {
-    if (e instanceof Error && e.name === "BlobNotFoundError") {
-      return new NextResponse(null, { status: 404 });
-    }
     const msg = e instanceof Error ? e.message : "Could not read cloud journal.";
     return NextResponse.json({ error: msg }, { status: 500 });
   }

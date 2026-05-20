@@ -9,6 +9,7 @@ export function getJournalSyncSecret(): string | undefined {
 export function getBlobReadWriteToken(): string | undefined {
   const v =
     process.env.BLOB_READ_WRITE_TOKEN?.trim() ||
-    process.env.blob_read_write_token?.trim();
+    process.env.blob_read_write_token?.trim() ||
+    process.env.blob_token?.trim();
   return v != null && v !== "" ? v : undefined;
 }

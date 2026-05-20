@@ -39,6 +39,7 @@ import {
   getCloudSyncToken,
   getLastCloudSavedIso,
   getLastCloudSyncError,
+  pullCloudJournalForce,
   setCloudSyncToken,
   subscribeCloudSyncSaved,
 } from "@/models/trade-log/blob-sync";
@@ -151,9 +152,12 @@ export function DataHub() {
         <CardHeader>
           <CardTitle className="text-base">Cloud sync (Vercel)</CardTitle>
           <CardDescription>
-            Same data as the JSON backup, stored in your Vercel Blob store.
-            Set the same secret in Vercel env (<code className="text-xs">journal_sync_secret</code>)
-            and paste it here once per browser. Last save wins if you edit on two devices at once.
+            Live cloud file: <code className="text-xs">journal/main.json</code>. Older uploads
+            like <code className="text-xs">trade-log-backup-*.json</code> are loaded once and
+            migrated automatically. Set <code className="text-xs">journal_sync_secret</code> in
+            Vercel (same value here). Blob token:{" "}
+            <code className="text-xs">BLOB_READ_WRITE_TOKEN</code> (not{" "}
+            <code className="text-xs">blob_token</code>).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -236,6 +240,30 @@ export function DataHub() {
               }
             >
               Sync now
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy || !cloudEnabled}
+              onClick={() =>
+                void run(async () => {
+                  setCloudErr(null);
+                  setCloudOk(null);
+                  const result = await pullCloudJournalForce();
+                  setLastCloudIso(getLastCloudSavedIso());
+                  if (result.ok) {
+                    setCloudOk(result.message);
+                    setCloudErr(null);
+                  } else {
+                    setCloudErr(result.message);
+                    setCloudOk(null);
+                  }
+                  router.refresh();
+                })
+              }
+            >
+              Pull from cloud
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
