@@ -214,11 +214,25 @@ async function applyCloudText(text: string): Promise<boolean> {
   }
 }
 
-/** After local hydrate: merge with cloud backup (newer exportedAt / updatedAt wins). */
-export async function bootstrapTradeLogCloudSync(): Promise<void> {
-  if (getCloudSyncToken() == null) return;
-  if (getActiveWorkspaceCsvRoot() != null) return;
+export type CloudSyncBootstrapResult = {
+  ok: boolean;
+  message: string;
+};
 
+/** After local hydrate: merge with cloud backup (newer exportedAt / updatedAt wins). */
+export async function bootstrapTradeLogCloudSync(): Promise<CloudSyncBootstrapResult> {
+  if (getCloudSyncToken() == null) {
+    return { ok: false, message: "Sync token is not set." };
+  }
+  if (getActiveWorkspaceCsvRoot() != null) {
+    return {
+      ok: false,
+      message:
+        "Cloud sync is paused while a CSV folder is linked. Unlink the folder on this page first.",
+    };
+  }
+
+  lastCloudSyncError = null;
   const local = persistedSliceSnapshot();
   const localMs = getLocalUpdatedMs();
   const localPopulated = sliceLooksPopulated(local);
@@ -227,43 +241,103 @@ export async function bootstrapTradeLogCloudSync(): Promise<void> {
   if (!cloud.ok) {
     if (cloud.status === 404) {
       if (localPopulated) {
-        await pushCloudJournalBackup(local);
+        const push = await pushCloudJournalBackup(local);
+        if (push.ok) {
+          return {
+            ok: true,
+            message: `Journal uploaded to the cloud (${new Date(push.exportedAt).toLocaleString()}).`,
+          };
+        }
+        return { ok: false, message: push.error };
       }
-      return;
+      return {
+        ok: true,
+        message:
+          "Connected. No cloud backup yet — add data in the app or upload a JSON backup, then use Sync now.",
+      };
     }
-    if (cloud.status !== 401) {
-      lastCloudSyncError = cloud.error;
-    }
-    return;
+    lastCloudSyncError = cloud.error;
+    return { ok: false, message: cloud.error };
   }
 
   const cloudMs = parseExportedAtMs(cloud.exportedAt);
 
   if (!localPopulated) {
-    await applyCloudText(cloud.text);
+    const applied = await applyCloudText(cloud.text);
+    if (!applied) {
+      const err = lastCloudSyncError ?? "Could not load cloud backup.";
+      return { ok: false, message: err };
+    }
     if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
-    return;
+    return {
+      ok: true,
+      message: cloud.exportedAt
+        ? `Journal loaded from the cloud (${new Date(cloud.exportedAt).toLocaleString()}).`
+        : "Journal loaded from the cloud.",
+    };
   }
 
   if (cloudMs > localMs) {
-    await applyCloudText(cloud.text);
+    const applied = await applyCloudText(cloud.text);
+    if (!applied) {
+      const err = lastCloudSyncError ?? "Could not load cloud backup.";
+      return { ok: false, message: err };
+    }
     if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
-    return;
+    return {
+      ok: true,
+      message: cloud.exportedAt
+        ? `Cloud copy was newer — journal updated (${new Date(cloud.exportedAt).toLocaleString()}).`
+        : "Cloud copy was newer — journal updated.",
+    };
   }
 
   if (localMs > cloudMs) {
-    await pushCloudJournalBackup(local);
-    return;
+    const push = await pushCloudJournalBackup(local);
+    if (push.ok) {
+      return {
+        ok: true,
+        message: `This device was newer — uploaded to the cloud (${new Date(push.exportedAt).toLocaleString()}).`,
+      };
+    }
+    return { ok: false, message: push.error };
   }
 
   if (cloud.exportedAt) notifyCloudSaved(cloud.exportedAt);
+  return {
+    ok: true,
+    message: cloud.exportedAt
+      ? `Already in sync (${new Date(cloud.exportedAt).toLocaleString()}).`
+      : "Already in sync with the cloud.",
+  };
 }
 
-export async function flushTradeLogCloudSyncNow(): Promise<boolean> {
-  if (getCloudSyncToken() == null) return false;
-  if (getActiveWorkspaceCsvRoot() != null) return false;
+export async function flushTradeLogCloudSyncNow(): Promise<
+  { ok: true; message: string } | { ok: false; message: string }
+> {
+  if (getCloudSyncToken() == null) {
+    return { ok: false, message: "Sync token is not set." };
+  }
+  if (getActiveWorkspaceCsvRoot() != null) {
+    return {
+      ok: false,
+      message: "Cloud sync is paused while a CSV folder is linked.",
+    };
+  }
+  if (!sliceLooksPopulated(persistedSliceSnapshot())) {
+    return {
+      ok: false,
+      message: "Nothing to sync — add workspaces, trades, or upload a backup first.",
+    };
+  }
   const r = await pushCloudJournalBackup();
-  return r.ok;
+  if (r.ok) {
+    return {
+      ok: true,
+      message: `Saved to cloud (${new Date(r.exportedAt).toLocaleString()}).`,
+    };
+  }
+  return { ok: false, message: r.error };
 }
 
 export function subscribeDebouncedCloudSync(debounceMs: number): () => void {

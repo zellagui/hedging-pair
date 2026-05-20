@@ -84,6 +84,7 @@ export function DataHub() {
   const [cloudErr, setCloudErr] = useState<string | null>(() =>
     getLastCloudSyncError()
   );
+  const [cloudOk, setCloudOk] = useState<string | null>(null);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -178,9 +179,16 @@ export function DataHub() {
                   setCloudSyncToken(cloudTokenDraft.trim());
                   setCloudEnabled(true);
                   setCloudErr(null);
-                  await bootstrapTradeLogCloudSync();
+                  setCloudOk(null);
+                  const result = await bootstrapTradeLogCloudSync();
                   setLastCloudIso(getLastCloudSavedIso());
-                  setCloudErr(getLastCloudSyncError());
+                  if (result.ok) {
+                    setCloudOk(result.message);
+                    setCloudErr(null);
+                  } else {
+                    setCloudErr(result.message);
+                    setCloudOk(null);
+                  }
                   router.refresh();
                 })
               }
@@ -199,6 +207,7 @@ export function DataHub() {
                   setCloudEnabled(false);
                   setLastCloudIso(null);
                   setCloudErr(null);
+                  setCloudOk(null);
                 })
               }
             >
@@ -212,9 +221,17 @@ export function DataHub() {
               onClick={() =>
                 void run(async () => {
                   setCloudErr(null);
-                  const ok = await flushTradeLogCloudSyncNow();
-                  if (!ok) setCloudErr(getLastCloudSyncError());
+                  setCloudOk(null);
+                  const result = await flushTradeLogCloudSyncNow();
                   setLastCloudIso(getLastCloudSavedIso());
+                  if (result.ok) {
+                    setCloudOk(result.message);
+                    setCloudErr(null);
+                  } else {
+                    setCloudErr(result.message);
+                    setCloudOk(null);
+                  }
+                  router.refresh();
                 })
               }
             >
@@ -229,6 +246,9 @@ export function DataHub() {
                 ? `Last synced ${new Date(lastCloudIso).toLocaleString()}`
                 : "No cloud save yet"}
           </p>
+          {cloudOk != null ? (
+            <p className="text-xs text-green-600 dark:text-green-400">{cloudOk}</p>
+          ) : null}
           {cloudErr != null ? (
             <p className="text-xs text-destructive">{cloudErr}</p>
           ) : null}
