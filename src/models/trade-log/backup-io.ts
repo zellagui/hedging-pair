@@ -23,6 +23,30 @@ function asUnknownArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
+/** JSON backup object (download, cloud sync, API). */
+export function buildTradeLogBackupPayload(
+  slice: PersistedTradeLogSlice,
+  exportedAt?: string
+): TradeLogBackupFileShape & { version: number } {
+  return {
+    version: STORAGE_VERSION,
+    exportedAt: exportedAt ?? new Date().toISOString(),
+    sessions: slice.sessions,
+    trades: slice.trades,
+    pairs: slice.pairs,
+    challenges: slice.challenges,
+    identities: slice.identities,
+    activeIdentityId: slice.activeIdentityId,
+  };
+}
+
+export function serializeTradeLogBackup(
+  slice: PersistedTradeLogSlice,
+  exportedAt?: string
+): string {
+  return JSON.stringify(buildTradeLogBackupPayload(slice, exportedAt), null, 2);
+}
+
 /**
  * Parses a JSON file produced by {@link downloadTradeLogBackupJson} (or the same shape).
  * Drops malformed rows like localStorage hydration.

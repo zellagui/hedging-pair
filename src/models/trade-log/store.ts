@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { serializeTradeLogBackup } from "@/models/trade-log/backup-io";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { normalizeLedgerPhases } from "./challenge-ledger";
@@ -771,17 +772,14 @@ export async function downloadTradeLogBackupJson(): Promise<void> {
   let json: string;
   try {
     const st = useTradingStore.getState();
-    const payload = {
-      version: STORAGE_VERSION,
-      exportedAt: new Date().toISOString(),
+    json = serializeTradeLogBackup({
       sessions: st.sessions,
       trades: st.trades,
       pairs: st.pairs,
       challenges: st.challenges,
       identities: st.identities,
       activeIdentityId: st.activeIdentityId,
-    };
-    json = JSON.stringify(payload, null, 2);
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Could not serialize journal.";
     window.alert(`Export failed: ${msg}`);

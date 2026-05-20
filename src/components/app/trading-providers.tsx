@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 
 import {
+  bootstrapTradeLogCloudSync,
+  subscribeDebouncedCloudSync,
+} from "@/models/trade-log/blob-sync";
+import {
   bootstrapTradeLogWorkspaceCsv,
   subscribeDebouncedTradeLogWorkspaceCsv,
 } from "@/models/trade-log/workspace-csv-sync";
@@ -31,18 +35,22 @@ export function TradingProviders({ children }: { children: React.ReactNode }) {
     if (!ready) return;
 
     let unsubCsv: (() => void) | undefined;
+    let unsubCloud: (() => void) | undefined;
     let cancelled = false;
 
     void (async () => {
       await bootstrapTradeLogWorkspaceCsv();
-      if (!cancelled) {
-        unsubCsv = subscribeDebouncedTradeLogWorkspaceCsv(560);
-      }
+      if (cancelled) return;
+      await bootstrapTradeLogCloudSync();
+      if (cancelled) return;
+      unsubCsv = subscribeDebouncedTradeLogWorkspaceCsv(560);
+      unsubCloud = subscribeDebouncedCloudSync(600);
     })();
 
     return () => {
       cancelled = true;
       unsubCsv?.();
+      unsubCloud?.();
     };
   }, [ready]);
 

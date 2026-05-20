@@ -14,6 +14,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -30,6 +32,16 @@ import {
   importTradeLogBackupJsonText,
   useTradingStore,
 } from "@/models/trade-log/store";
+import {
+  bootstrapTradeLogCloudSync,
+  flushTradeLogCloudSyncNow,
+  getCloudSyncEnabled,
+  getCloudSyncToken,
+  getLastCloudSavedIso,
+  getLastCloudSyncError,
+  setCloudSyncToken,
+  subscribeCloudSyncSaved,
+} from "@/models/trade-log/blob-sync";
 import {
   flushTradeLogWorkspaceCsvNow,
   getActiveWorkspaceCsvRoot,
@@ -62,6 +74,17 @@ export function DataHub() {
   const [importErr, setImportErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [cloudTokenDraft, setCloudTokenDraft] = useState(() =>
+    getCloudSyncToken() ?? ""
+  );
+  const [cloudEnabled, setCloudEnabled] = useState(() => getCloudSyncEnabled());
+  const [lastCloudIso, setLastCloudIso] = useState<string | null>(() =>
+    getLastCloudSavedIso()
+  );
+  const [cloudErr, setCloudErr] = useState<string | null>(() =>
+    getLastCloudSyncError()
+  );
+
   useEffect(() => {
     queueMicrotask(() => {
       setSupportsFolder(supportsWorkspaceDirectoryPicker());
@@ -79,6 +102,15 @@ export function DataHub() {
 
   useEffect(
     () => subscribeWorkspaceCsvSaved((iso) => setLastSavedIso(iso)),
+    []
+  );
+
+  useEffect(
+    () =>
+      subscribeCloudSyncSaved((iso) => {
+        setLastCloudIso(iso);
+        setCloudErr(null);
+      }),
     []
   );
 
@@ -113,6 +145,95 @@ export function DataHub() {
           The rest of the app updates immediately after you load.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Cloud sync (Vercel)</CardTitle>
+          <CardDescription>
+            Same data as the JSON backup, stored in your Vercel Blob store.
+            Set the same secret in Vercel env (<code className="text-xs">journal_sync_secret</code>)
+            and paste it here once per browser. Last save wins if you edit on two devices at once.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="cloud-sync-token">Sync secret</Label>
+            <Input
+              id="cloud-sync-token"
+              type="password"
+              autoComplete="off"
+              placeholder="Paste journal_sync_secret"
+              value={cloudTokenDraft}
+              disabled={busy}
+              onChange={(e) => setCloudTokenDraft(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || cloudTokenDraft.trim() === ""}
+              onClick={() =>
+                void run(async () => {
+                  setCloudSyncToken(cloudTokenDraft.trim());
+                  setCloudEnabled(true);
+                  setCloudErr(null);
+                  await bootstrapTradeLogCloudSync();
+                  setLastCloudIso(getLastCloudSavedIso());
+                  setCloudErr(getLastCloudSyncError());
+                  router.refresh();
+                })
+              }
+            >
+              Save token
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy || !cloudEnabled}
+              onClick={() =>
+                void run(async () => {
+                  setCloudSyncToken(null);
+                  setCloudTokenDraft("");
+                  setCloudEnabled(false);
+                  setLastCloudIso(null);
+                  setCloudErr(null);
+                })
+              }
+            >
+              Clear token
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy || !cloudEnabled}
+              onClick={() =>
+                void run(async () => {
+                  setCloudErr(null);
+                  const ok = await flushTradeLogCloudSyncNow();
+                  if (!ok) setCloudErr(getLastCloudSyncError());
+                  setLastCloudIso(getLastCloudSavedIso());
+                })
+              }
+            >
+              Sync now
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Status:{" "}
+            {!cloudEnabled
+              ? "Not configured"
+              : lastCloudIso != null
+                ? `Last synced ${new Date(lastCloudIso).toLocaleString()}`
+                : "No cloud save yet"}
+          </p>
+          {cloudErr != null ? (
+            <p className="text-xs text-destructive">{cloudErr}</p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
