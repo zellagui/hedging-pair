@@ -9,6 +9,7 @@ const links = [
   { href: "/", label: "Overview" },
   { href: "/identities", label: "Workspaces" },
   { href: "/challenges", label: "Challenges" },
+  { href: "/trades", label: "Trades" },
   { href: "/data", label: "Data" },
 ] as const;
 

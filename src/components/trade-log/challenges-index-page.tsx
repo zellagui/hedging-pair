@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { ChevronRight } from "lucide-react";
 
 import { ChallengeFormDialog } from "@/components/trade-log/challenge-form-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +19,9 @@ import {
   getPairsByChallengeId,
   isChallengeLiveStatus,
 } from "@/models/trade-log/challenges";
-import { formatMoney } from "@/models/trade-log/format";
+import { formatMoney, formatShortMonthDay } from "@/models/trade-log/format";
 import { useTradingStore } from "@/models/trade-log/store";
 import type { Challenge, ChallengeStatus, HedgePair, LogTrade } from "@/models/trade-log/types";
-import { ChevronRight } from "lucide-react";
 
 function moneyTint(v: number) {
   if (v > 0) return "text-emerald-600 dark:text-emerald-400";
@@ -462,6 +462,12 @@ function ChallengeListRow({
                 {workspaceName}
               </Badge>
               {statusBadge(c)}
+              <span
+                className="text-sm tabular-nums text-muted-foreground"
+                title="Challenge created in journal."
+              >
+                {formatShortMonthDay(c.createdAt)}
+              </span>
               <span
                 className="text-sm text-muted-foreground"
                 title="One-time entry / eval fee for this challenge."

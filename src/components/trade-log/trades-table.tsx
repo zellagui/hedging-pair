@@ -38,8 +38,8 @@ type Props = {
   pairs: HedgePair[];
   challenges: Challenge[];
   onAdd: () => void;
-  onEdit: (trade: LogTrade) => void;
-  onLink: (trade: LogTrade) => void;
+  onEdit?: (trade: LogTrade) => void;
+  onLink?: (trade: LogTrade) => void;
 };
 
 export function TradesTable({
@@ -71,7 +71,12 @@ export function TradesTable({
   return (
     <div className="rounded-lg border bg-card shadow-sm">
       <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-base font-semibold">Trades</h2>
+        <div>
+          <h2 className="text-base font-semibold">Trades</h2>
+          <p className="text-xs text-muted-foreground">
+            Click Edit on a row to change symbol, size, or prices.
+          </p>
+        </div>
         <Button type="button" size="sm" onClick={onAdd}>
           Add trade
         </Button>
@@ -87,7 +92,7 @@ export function TradesTable({
               <th className="px-3 py-2 font-medium text-right">Size</th>
               <th className="px-3 py-2 font-medium text-right">Entry</th>
               <th className="px-3 py-2 font-medium text-right">Exit</th>
-              <th className="px-3 py-2 font-medium text-right">P&L</th>
+              <th className="px-3 py-2 font-medium text-right">P&amp;L</th>
               <th className="px-3 py-2 font-medium">Opposite</th>
               <th className="px-3 py-2 font-medium text-right">Combined</th>
               <th className="px-3 py-2 font-medium">Step</th>
@@ -139,12 +144,7 @@ export function TradesTable({
                     ? (challengeById.get(t.challengeId)?.name ?? "—")
                     : "Personal";
 
-                const linkDisabled = isPaired || readOnly;
-                const linkTitle = readOnly
-                  ? "Session closed"
-                  : isPaired
-                    ? "Already linked"
-                    : "Link prop (with challenge) to personal";
+                const linkDisabled = isPaired || readOnly || !onLink;
 
                 return (
                   <tr key={t.id} className="border-b last:border-0">
@@ -218,23 +218,24 @@ export function TradesTable({
                       <div className="flex flex-wrap justify-end gap-1">
                         {!readOnly ? (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              type="button"
-                              className="h-8"
-                              onClick={() => onEdit(t)}
-                            >
-                              Edit
-                            </Button>
-                            {!isPaired ? (
+                            {onEdit ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                type="button"
+                                className="h-8"
+                                onClick={() => onEdit(t)}
+                              >
+                                Edit
+                              </Button>
+                            ) : null}
+                            {onLink && !isPaired ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 type="button"
                                 className="h-8"
                                 disabled={linkDisabled}
-                                title={linkTitle}
                                 onClick={() => onLink(t)}
                               >
                                 Link hedge

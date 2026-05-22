@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { CloseLegDialog } from "@/components/trade-log/close-leg-dialog";
+import { TradeEditDialog } from "@/components/trade-log/trade-edit-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -143,6 +144,10 @@ export function ChallengeHedgePairsTable({
   onRequestLogPhase,
 }: ChallengeHedgePairsTableProps) {
   const [closeLeg, setCloseLeg] = useState<CloseLegTarget | null>(null);
+  const [editTarget, setEditTarget] = useState<{
+    tradeId: string;
+    phaseLabel: string;
+  } | null>(null);
   const [pairPendingDelete, setPairPendingDelete] = useState<{
     pair: HedgePair;
     phaseN: number;
@@ -230,6 +235,15 @@ export function ChallengeHedgePairsTable({
           if (!o) setCloseLeg(null);
         }}
         updateTrade={updateTrade}
+      />
+
+      <TradeEditDialog
+        open={editTarget != null}
+        onOpenChange={(o) => {
+          if (!o) setEditTarget(null);
+        }}
+        tradeId={editTarget?.tradeId ?? null}
+        phaseLabel={editTarget?.phaseLabel}
       />
       <div className="overflow-x-auto rounded-lg border border-border">
         <Table>
@@ -321,6 +335,38 @@ export function ChallengeHedgePairsTable({
                   </TableCell>
                   <TableCell className="align-top py-2 text-right">
                     <div className="flex flex-wrap items-center justify-end gap-1">
+                      {propT && !unlinkDisabled ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() =>
+                            setEditTarget({
+                              tradeId: propT.id,
+                              phaseLabel: `Phase ${phaseN}`,
+                            })
+                          }
+                        >
+                          Edit prop
+                        </Button>
+                      ) : null}
+                      {perT && !unlinkDisabled ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() =>
+                            setEditTarget({
+                              tradeId: perT.id,
+                              phaseLabel: `Phase ${phaseN}`,
+                            })
+                          }
+                        >
+                          Edit pers
+                        </Button>
+                      ) : null}
                       {canCloseProp ? (
                         <Button
                           type="button"
