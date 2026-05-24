@@ -4,6 +4,7 @@ import {
   normalizePair,
   normalizeSession,
   normalizeTrade,
+  normalizePlan,
 } from "./normalize";
 import { STORAGE_VERSION } from "./storage";
 import type { PersistedTradeLogSlice } from "./storage";
@@ -16,6 +17,7 @@ export type TradeLogBackupFileShape = {
   pairs?: unknown;
   challenges?: unknown;
   identities?: unknown;
+  plans?: unknown;
   activeIdentityId?: string | null;
   /** Set by /api/journal when serving a legacy blob path (stripped before hydrate). */
   journalSyncMeta?: { fromLegacy?: boolean };
@@ -38,6 +40,7 @@ export function buildTradeLogBackupPayload(
     pairs: slice.pairs,
     challenges: slice.challenges,
     identities: slice.identities,
+    plans: slice.plans,
     activeIdentityId: slice.activeIdentityId,
   };
 }
@@ -94,6 +97,9 @@ export function parseTradeLogBackupJsonText(
   const identities = asUnknownArray(o.identities)
     .map(normalizeIdentity)
     .filter((x): x is NonNullable<typeof x> => x != null);
+  const plans = asUnknownArray(o.plans)
+    .map(normalizePlan)
+    .filter((x): x is NonNullable<typeof x> => x != null);
 
   const aid = o.activeIdentityId;
   const activeIdentityId =
@@ -105,6 +111,7 @@ export function parseTradeLogBackupJsonText(
     pairs,
     challenges,
     identities,
+    plans,
     activeIdentityId,
   };
 
@@ -117,7 +124,7 @@ export function parseTradeLogBackupJsonText(
 }
 
 export function formatJournalSliceSummary(slice: PersistedTradeLogSlice): string {
-  return `${slice.identities.length} workspace${slice.identities.length === 1 ? "" : "s"}, ${slice.challenges.length} challenge${slice.challenges.length === 1 ? "" : "s"}, ${slice.trades.length} trade leg${slice.trades.length === 1 ? "" : "s"}`;
+  return `${slice.identities.length} workspace${slice.identities.length === 1 ? "" : "s"}, ${slice.challenges.length} challenge${slice.challenges.length === 1 ? "" : "s"}, ${slice.trades.length} trade leg${slice.trades.length === 1 ? "" : "s"}, ${slice.plans.length} plan${slice.plans.length === 1 ? "" : "s"}`;
 }
 
 /** Higher = more journal content (used to pick the best blob when several exist). */
@@ -127,6 +134,7 @@ export function scoreJournalSliceRichness(slice: PersistedTradeLogSlice): number
     slice.challenges.length +
     slice.trades.length +
     slice.pairs.length +
-    slice.sessions.length
+    slice.sessions.length +
+    slice.plans.length
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,53 @@ function oppositeDirection(d: TradeDirection): TradeDirection {
   return d === "long" ? "short" : "long";
 }
 
+// Calculate actual prices from points and entry price
+function calculatePricesFromPoints(
+  entryPrice: number, 
+  tpPoints: number, 
+  slPoints: number, 
+  direction: TradeDirection
+) {
+  if (direction === "long") {
+    return {
+      tpPrice: entryPrice + tpPoints,
+      slPrice: entryPrice - slPoints
+    };
+  } else {
+    return {
+      tpPrice: entryPrice - tpPoints,  
+      slPrice: entryPrice + slPoints
+    };
+  }
+}
+
+type PrefillData = {
+  symbol?: string;
+  direction?: TradeDirection;
+  size?: number;
+  entryPrice?: number;
+  tpPrice?: number;
+  slPrice?: number;
+  propPnl?: number;
+  personalPnl?: number;
+  
+  // Enhanced hedge context
+  propContracts?: number;
+  propDirection?: TradeDirection;
+  propTpUsd?: number;
+  propSlUsd?: number;
+  propTpPoints?: number;
+  propSlPoints?: number;
+  personalTpPoints?: number;
+  personalSlPoints?: number;
+  hedgeTarget?: number;
+  buffer?: number;
+  personalLossUsd?: number;
+  
+  // Performance tracking
+  hedgePlanId?: string | null;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -55,6 +102,7 @@ type Props = {
   challengeId: string;
   challengeName: string;
   locked: boolean;
+  prefill?: PrefillData | null;
   addTrade: (
     input: Omit<LogTrade, "id" | "createdAt" | "updatedAt">
   ) => string | null;
@@ -76,7 +124,13 @@ function buildPriceLeg(
   markStr: string,
   feesStr: string,
   notes: string,
-  screenshot: string
+  screenshot: string,
+  performanceTracking?: {
+    plannedPnl?: number;
+    plannedTpPoints?: number;
+    plannedSlPoints?: number;
+    hedgePlanId?: string;
+  }
 ): Omit<LogTrade, "id" | "createdAt" | "updatedAt"> {
   const exitVal = qNumOrNull(exitStr);
   return {
@@ -95,6 +149,12 @@ function buildPriceLeg(
     fees: qNum(feesStr, 0),
     notes: notes.trim(),
     screenshot: screenshot.trim() || null,
+    
+    // Performance tracking (when available)
+    plannedPnl: performanceTracking?.plannedPnl,
+    plannedTpPoints: performanceTracking?.plannedTpPoints,
+    plannedSlPoints: performanceTracking?.plannedSlPoints,
+    hedgePlanId: performanceTracking?.hedgePlanId,
   };
 }
 
@@ -105,7 +165,13 @@ function buildFastLeg(
   symbol: string,
   directPnl: number,
   notes: string,
-  screenshot: string
+  screenshot: string,
+  performanceTracking?: {
+    plannedPnl?: number;
+    plannedTpPoints?: number;
+    plannedSlPoints?: number;
+    hedgePlanId?: string;
+  }
 ): Omit<LogTrade, "id" | "createdAt" | "updatedAt"> {
   return {
     identityId,
@@ -123,6 +189,12 @@ function buildFastLeg(
     fees: 0,
     notes: notes.trim(),
     screenshot: screenshot.trim() || null,
+    
+    // Performance tracking (when available)
+    plannedPnl: performanceTracking?.plannedPnl,
+    plannedTpPoints: performanceTracking?.plannedTpPoints,
+    plannedSlPoints: performanceTracking?.plannedSlPoints,
+    hedgePlanId: performanceTracking?.hedgePlanId,
   };
 }
 
@@ -166,6 +238,7 @@ export function AddHedgePairDialog({
   challengeId,
   challengeName,
   locked,
+  prefill,
   addTrade,
   linkPair,
 }: Props) {
@@ -177,6 +250,7 @@ export function AddHedgePairDialog({
           challengeId={challengeId}
           challengeName={challengeName}
           locked={locked}
+          prefill={prefill}
           onOpenChange={onOpenChange}
           addTrade={addTrade}
           linkPair={linkPair}
@@ -190,6 +264,7 @@ function AddHedgePairDialogInner({
   challengeId,
   challengeName,
   locked,
+  prefill,
   onOpenChange,
   addTrade,
   linkPair,
@@ -203,26 +278,51 @@ function AddHedgePairDialogInner({
     () => getPairsByChallengeId(challengeId, trades, pairs).length + 1,
     [challengeId, trades, pairs]
   );
-  const [mode, setMode] = useState<LogMode>("fast");
+  const [mode, setMode] = useState<LogMode>(prefill ? "fast" : "fast");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const [symbol, setSymbol] = useState("");
-  const [direction, setDirection] = useState<TradeDirection>("long");
-  const [size, setSize] = useState("1");
-  const [entryPrice, setEntryPrice] = useState("");
-  const [propExit, setPropExit] = useState("");
+  const [symbol, setSymbol] = useState(prefill?.symbol || "");
+  const [direction, setDirection] = useState<TradeDirection>(prefill?.propDirection || "long");
+  const [size, setSize] = useState(prefill?.propContracts ? String(prefill.propContracts) : "1");
+  const [entryPrice, setEntryPrice] = useState(prefill?.entryPrice ? String(prefill.entryPrice) : "");
+  const [propExit, setPropExit] = useState(""); // Will be calculated from points
   const [propMark, setPropMark] = useState("");
   const [propFees, setPropFees] = useState("0");
-  const [perExit, setPerExit] = useState("");
+  const [perExit, setPerExit] = useState(""); // Will be calculated from points 
   const [perMark, setPerMark] = useState("");
   const [perFees, setPerFees] = useState("0");
-  const [perSizeOverride, setPerSizeOverride] = useState("");
+  const [perSizeOverride, setPerSizeOverride] = useState(prefill?.size ? String(prefill.size) : "");
 
-  const [propPnlFast, setPropPnlFast] = useState("");
-  const [perPnlFast, setPerPnlFast] = useState("");
+  const [propPnlFast, setPropPnlFast] = useState(""); // Prop P&L to be filled manually
+  const [perPnlFast, setPerPnlFast] = useState(prefill?.personalPnl ? String(prefill.personalPnl) : "");
 
   const [notes, setNotes] = useState("");
   const [screenshot, setScreenshot] = useState("");
+
+  // Calculate and prefill prices from hedge data
+  useEffect(() => {
+    if (prefill?.entryPrice && prefill?.propTpPoints && prefill?.propSlPoints) {
+      // Calculate prop prices
+      const propPrices = calculatePricesFromPoints(
+        prefill.entryPrice, 
+        prefill.propTpPoints, 
+        prefill.propSlPoints, 
+        prefill.propDirection || "long"
+      );
+      setPropExit(String(propPrices.tpPrice));
+      
+      // Calculate personal prices (if we have personal points)
+      if (prefill?.personalTpPoints && prefill?.personalSlPoints && prefill?.direction) {
+        const personalPrices = calculatePricesFromPoints(
+          prefill.entryPrice,
+          prefill.personalTpPoints,
+          prefill.personalSlPoints, 
+          prefill.direction
+        );
+        setPerExit(String(personalPrices.tpPrice));
+      }
+    }
+  }, [prefill]);
 
   const personalDir = oppositeDirection(direction);
   const sz = qNum(size, 1);
@@ -352,7 +452,14 @@ function AddHedgePairDialogInner({
       propMark,
       propFees,
       notes,
-      screenshot
+      screenshot,
+      // Add hedge plan context if available
+      prefill?.hedgePlanId ? {
+        plannedPnl: prefill.propPnl,
+        plannedTpPoints: prefill.propTpPoints,
+        plannedSlPoints: prefill.propSlPoints,
+        hedgePlanId: prefill.hedgePlanId,
+      } : undefined
     );
     const propId = addTrade(propPayload);
     if (propId == null) {
@@ -370,7 +477,14 @@ function AddHedgePairDialogInner({
       perMark,
       perFees,
       notes,
-      screenshot
+      screenshot,
+      // Add hedge plan context if available
+      prefill?.hedgePlanId ? {
+        plannedPnl: prefill.personalPnl,
+        plannedTpPoints: prefill.personalTpPoints,
+        plannedSlPoints: prefill.personalSlPoints,
+        hedgePlanId: prefill.hedgePlanId,
+      } : undefined
     );
     const personalId = addTrade(personalPayload);
     if (personalId == null) {
@@ -433,6 +547,11 @@ function AddHedgePairDialogInner({
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-3 rounded-lg border bg-sky-500/5 p-4 dark:bg-sky-950/20">
                 <p className="text-sm font-semibold">🏦 Prop firm leg</p>
+                {prefill?.propTpPoints && prefill?.propSlPoints && (
+                  <div className="text-xs text-muted-foreground p-2 bg-blue-50 rounded border">
+                    Hedge calc: TP {prefill.propTpPoints.toFixed(1)}pts (${prefill.propTpUsd?.toFixed(0)}) • SL {prefill.propSlPoints.toFixed(1)}pts (${prefill.propSlUsd?.toFixed(0)})
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="ahp-symbol">Symbol</Label>
                   <Input
@@ -541,6 +660,11 @@ function AddHedgePairDialogInner({
                 <p className="text-sm font-semibold">
                   👤 Personal leg (opposite)
                 </p>
+                {prefill?.personalTpPoints && prefill?.personalSlPoints && (
+                  <div className="text-xs text-muted-foreground p-2 bg-purple-50 rounded border">
+                    Hedge calc: {prefill.size?.toFixed(1)} lots • TP {prefill.personalTpPoints.toFixed(1)}pts • SL {prefill.personalSlPoints.toFixed(1)}pts
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Symbol</Label>
                   <Input
@@ -566,7 +690,7 @@ function AddHedgePairDialogInner({
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder={String(sz)}
+                    placeholder={prefill?.size ? String(prefill.size) : String(sz)}
                     value={perSizeOverride}
                     onChange={(e) => setPerSizeOverride(e.target.value)}
                   />
@@ -641,6 +765,11 @@ function AddHedgePairDialogInner({
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-3 rounded-lg border bg-sky-500/5 p-4 dark:bg-sky-950/20">
                 <p className="text-sm font-semibold">🏦 Prop firm leg</p>
+                {prefill?.propTpPoints && prefill?.propSlPoints && (
+                  <div className="text-xs text-muted-foreground p-2 bg-blue-50 rounded border">
+                    Hedge calc: {prefill.propContracts} contracts • TP {prefill.propTpPoints.toFixed(1)}pts • SL {prefill.propSlPoints.toFixed(1)}pts
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="ahp-f-symbol">Symbol</Label>
                   <Input
@@ -691,6 +820,11 @@ function AddHedgePairDialogInner({
                 <p className="text-sm font-semibold">
                   👤 Personal leg (opposite)
                 </p>
+                {prefill?.personalTpPoints && prefill?.personalSlPoints && (
+                  <div className="text-xs text-muted-foreground p-2 bg-purple-50 rounded border">
+                    Hedge calc: {prefill.size?.toFixed(1)} lots • TP {prefill.personalTpPoints.toFixed(1)}pts • SL {prefill.personalSlPoints.toFixed(1)}pts • Target: ${prefill.personalPnl?.toFixed(0)}
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Symbol</Label>
                   <Input

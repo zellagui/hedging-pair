@@ -6,8 +6,9 @@ import {
   normalizePair,
   normalizeSession,
   normalizeTrade,
+  normalizePlan,
 } from "./normalize";
-import type { Challenge, HedgePair, Identity, LogSession, LogTrade } from "./types";
+import type { Challenge, HedgePair, Identity, LogSession, LogTrade, PhasePlan } from "./types";
 
 /**
  * Persists readable keys. Legacy keys (`journal-root`, `accounts`,
@@ -19,10 +20,11 @@ export const STORAGE_KEY_TRADES = "trades";
 export const STORAGE_KEY_PAIRS = "pairs";
 export const STORAGE_KEY_CHALLENGES = "challenges";
 export const STORAGE_KEY_IDENTITIES = "identities";
+export const STORAGE_KEY_PLANS = "plans";
 /** UUID string persisted when Overview scope is chosen. */
 export const STORAGE_KEY_ACTIVE_IDENTITY_ID = "journal-active-identity-id";
 export const TRADE_LOG_ROOT_KEY = "trade-log-root";
-export const STORAGE_VERSION = 8;
+export const STORAGE_VERSION = 12;
 
 export type PersistedTradeLogSlice = {
   sessions: LogSession[];
@@ -30,6 +32,7 @@ export type PersistedTradeLogSlice = {
   pairs: HedgePair[];
   challenges: Challenge[];
   identities: Identity[];
+  plans: PhasePlan[];
   activeIdentityId: string | null;
 };
 
@@ -67,6 +70,7 @@ export function persistTradeLogSliceToLocalKeys(state: PersistedTradeLogSlice) {
     STORAGE_KEY_IDENTITIES,
     JSON.stringify(state.identities)
   );
+  localStorage.setItem(STORAGE_KEY_PLANS, JSON.stringify(state.plans));
   localStorage.setItem(
     STORAGE_KEY_ACTIVE_IDENTITY_ID,
     state.activeIdentityId ?? ""
@@ -102,6 +106,9 @@ export function createTradeLogPersistStorage(): StateStorage {
       const identitiesRaw = safeParseArray<unknown>(
         localStorage.getItem(STORAGE_KEY_IDENTITIES)
       );
+      const plansRaw = safeParseArray<unknown>(
+        localStorage.getItem(STORAGE_KEY_PLANS)
+      );
       const aid = localStorage.getItem(STORAGE_KEY_ACTIVE_IDENTITY_ID);
       const activeIdentityId =
         aid != null && aid.trim() !== "" ? aid.trim() : null;
@@ -121,13 +128,17 @@ export function createTradeLogPersistStorage(): StateStorage {
       const identities = identitiesRaw
         .map(normalizeIdentity)
         .filter((x): x is Identity => x != null);
+      const plans = plansRaw
+        .map(normalizePlan)
+        .filter((x): x is PhasePlan => x != null);
 
       if (
         sessions.length === 0 &&
         trades.length === 0 &&
         pairs.length === 0 &&
         challenges.length === 0 &&
-        identities.length === 0
+        identities.length === 0 &&
+        plans.length === 0
       ) {
         return null;
       }
@@ -139,6 +150,7 @@ export function createTradeLogPersistStorage(): StateStorage {
           pairs,
           challenges,
           identities,
+          plans,
           activeIdentityId,
         },
         version: STORAGE_VERSION,
@@ -163,6 +175,7 @@ export function createTradeLogPersistStorage(): StateStorage {
       localStorage.removeItem(STORAGE_KEY_PAIRS);
       localStorage.removeItem(STORAGE_KEY_CHALLENGES);
       localStorage.removeItem(STORAGE_KEY_IDENTITIES);
+      localStorage.removeItem(STORAGE_KEY_PLANS);
       localStorage.removeItem(STORAGE_KEY_ACTIVE_IDENTITY_ID);
       localStorage.removeItem(TRADE_LOG_ROOT_KEY);
     },

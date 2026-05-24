@@ -5,6 +5,7 @@ import {
   normalizePair,
   normalizeSession,
   normalizeTrade,
+  normalizePlan,
 } from "./normalize";
 import type { PersistedTradeLogSlice } from "./storage";
 import { STORAGE_VERSION } from "./storage";
@@ -14,6 +15,7 @@ import type {
   Identity,
   LogSession,
   LogTrade,
+  PhasePlan,
 } from "./types";
 
 /** Canonical CSV filenames for workspace folder sync / export. */
@@ -22,6 +24,7 @@ export const CSV_FILE_CHALLENGES = "challenges.csv";
 export const CSV_FILE_TRADES = "trades.csv";
 export const CSV_FILE_PAIRS = "pairs.csv";
 export const CSV_FILE_SESSIONS = "sessions.csv";
+export const CSV_FILE_PLANS = "plans.csv";
 export const CSV_FILE_META = "meta.json";
 
 export type WorkspaceCsvMeta = {
@@ -207,6 +210,7 @@ const PAIR_COLUMNS = [
   "combinedPnl",
   "status",
   "manuallySetStatus",
+  "planId",
   "createdAt",
   "updatedAt",
 ] as const;
@@ -216,6 +220,29 @@ const SESSION_COLUMNS = [
   "date",
   "notes",
   "closed",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+const PLAN_COLUMNS = [
+  "id",
+  "challengeId",
+  "phaseNumber",
+  "propTpUsd",
+  "propSlUsd",
+  "propContracts",
+  "personalTargetProfit",
+  "personalPointValue",
+  "buffer",
+  "lotStep",
+  "minLot",
+  "roundMode",
+  "expectedPayout",
+  "propSymbol",
+  "personalSymbol",
+  "personalEntryPrice",
+  "hedgePairId",
+  "status",
   "createdAt",
   "updatedAt",
 ] as const;
@@ -281,6 +308,7 @@ function rowPair(p: HedgePair): unknown[] {
     p.combinedPnl,
     p.status,
     p.manuallySetStatus,
+    p.planId,
     p.createdAt,
     p.updatedAt,
   ];
@@ -294,6 +322,31 @@ function rowSession(s: LogSession): unknown[] {
     s.closed,
     s.createdAt,
     s.updatedAt,
+  ];
+}
+
+function rowPlan(p: PhasePlan): unknown[] {
+  return [
+    p.id,
+    p.challengeId,
+    p.phaseNumber,
+    p.propTpUsd,
+    p.propSlUsd,
+    p.propContracts,
+    p.personalTargetProfit,
+    p.personalPointValue,
+    p.buffer,
+    p.lotStep,
+    p.minLot,
+    p.roundMode,
+    p.expectedPayout,
+    p.propSymbol,
+    p.personalSymbol,
+    p.personalEntryPrice,
+    p.hedgePairId,
+    p.status,
+    p.createdAt,
+    p.updatedAt,
   ];
 }
 
@@ -325,6 +378,9 @@ export function serializeTradeLogSliceToFiles(
   const sortedSessions = [...slice.sessions].sort((a, b) =>
     a.id.localeCompare(b.id)
   );
+  const sortedPlans = [...slice.plans].sort((a, b) =>
+    a.id.localeCompare(b.id)
+  );
 
   return {
     [CSV_FILE_META]: stringifyMeta(m),
@@ -342,6 +398,7 @@ export function serializeTradeLogSliceToFiles(
       SESSION_COLUMNS,
       sortedSessions.map(rowSession)
     ),
+    [CSV_FILE_PLANS]: stringifyCsv(PLAN_COLUMNS, sortedPlans.map(rowPlan)),
   };
 }
 
@@ -373,6 +430,7 @@ export function parseFilesToTradeLogSlice(
   const trCsv = parseCsv(files[CSV_FILE_TRADES] ?? "");
   const paCsv = parseCsv(files[CSV_FILE_PAIRS] ?? "");
   const seCsv = parseCsv(files[CSV_FILE_SESSIONS] ?? "");
+  const plCsv = parseCsv(files[CSV_FILE_PLANS] ?? "");
 
   const identities =
     rowsToMaps(identCsv.headers, identCsv.rows).map(normalizeCsvIdentity);
@@ -382,6 +440,7 @@ export function parseFilesToTradeLogSlice(
   const pairs = rowsToMaps(paCsv.headers, paCsv.rows).map(normalizeCsvPair);
   const sessions =
     rowsToMaps(seCsv.headers, seCsv.rows).map(normalizeCsvSession);
+  const plans = rowsToMaps(plCsv.headers, plCsv.rows).map(normalizeCsvPlan);
 
   const metaParsed = metaRaw ? parseMeta(metaRaw) : null;
 
@@ -391,6 +450,7 @@ export function parseFilesToTradeLogSlice(
     trades: trades.filter((x): x is LogTrade => x != null),
     pairs: pairs.filter((x): x is HedgePair => x != null),
     sessions: sessions.filter((x): x is LogSession => x != null),
+    plans: plans.filter((x): x is PhasePlan => x != null),
     activeIdentityId: metaParsed?.activeIdentityId ?? null,
   };
 }
@@ -488,6 +548,34 @@ function normalizeCsvSession(o: Record<string, string>): LogSession | null {
   });
 }
 
+function normalizeCsvPlan(o: Record<string, string>): PhasePlan | null {
+  return normalizePlan({
+    id: o.id,
+    challengeId: o.challengeId,
+    phaseNumber: o.phaseNumber ?? "1",
+    propSymbol: o.propSymbol ?? "",
+    propDirection: o.propDirection ?? "long",
+    propTpPoints: o.propTpPoints ?? "0",
+    propSlPoints: o.propSlPoints ?? "0",
+    propContracts: o.propContracts ?? "1",
+    propPointValue: o.propPointValue ?? "1",
+    propEntryPrice: o.propEntryPrice ?? "",
+    personalSymbol: o.personalSymbol ?? o.propSymbol ?? "",
+    personalPointValue: o.personalPointValue ?? "1",
+    targetProfit: o.targetProfit ?? "0",
+    lotStep: o.lotStep ?? "0.1",
+    minLot: o.minLot ?? "0.1",
+    buffer: o.buffer ?? "1.5",
+    roundMode: o.roundMode ?? "up",
+    personalEntryPrice: o.personalEntryPrice ?? "",
+    expectedPayout: o.expectedPayout ?? "0",
+    hedgePairId: o.hedgePairId ?? "",
+    status: o.status ?? "planned",
+    createdAt: o.createdAt ?? "",
+    updatedAt: o.updatedAt ?? "",
+  });
+}
+
 export function filterSliceForExport(
   full: PersistedTradeLogSlice,
   selectedIdentityIds: string[],
@@ -503,6 +591,7 @@ export function filterSliceForExport(
       trades: [],
       pairs: [],
       sessions: [],
+      plans: [],
       activeIdentityId: full.activeIdentityId,
     };
   }
@@ -559,6 +648,8 @@ export function filterSliceForExport(
   }
 
   const sessions = full.sessions.filter((s) => sessionIdsNeeded.has(s.id));
+  
+  const plans = full.plans.filter((p) => scopedChallengeIds.has(p.challengeId));
 
   let aid = full.activeIdentityId;
   if (aid != null && !idSetIdentity.has(aid)) {
@@ -571,6 +662,7 @@ export function filterSliceForExport(
     trades,
     pairs,
     sessions,
+    plans,
     activeIdentityId: aid,
   };
 }

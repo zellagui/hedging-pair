@@ -30,6 +30,8 @@ import type {
   LogSession,
   LogTrade,
   PairStatus,
+  PhasePlan,
+  PhasePlanCreateInput,
 } from "./types";
 
 const persistStorage = createTradeLogPersistStorage();
@@ -53,11 +55,16 @@ function repairHydratedPersistedTradeLogSlice(slice: PersistedTradeLogSlice) {
       )
     : slice.trades;
 
+  const pairsRepaired = slice.pairs.map((p) => ({
+    ...p,
+    planId: p.planId ?? null,
+  }));
+
   const ensured = ensureIdentityConsistency({
     identities: slice.identities ?? [],
     challenges: slice.challenges,
     trades: tradesRepaired,
-    pairs: slice.pairs,
+    pairs: pairsRepaired,
     activeIdentityId: slice.activeIdentityId ?? null,
     nowIso,
   });
@@ -65,7 +72,7 @@ function repairHydratedPersistedTradeLogSlice(slice: PersistedTradeLogSlice) {
   const challengesAfterBreaches = applyChallengeDrawdownBreachFailure(
     ensured.challenges,
     ensured.trades,
-    slice.pairs,
+    pairsRepaired,
     nowIso
   );
 
@@ -73,9 +80,10 @@ function repairHydratedPersistedTradeLogSlice(slice: PersistedTradeLogSlice) {
     identities: ensured.identities,
     trades: ensured.trades,
     challenges: challengesAfterBreaches,
-    pairs: slice.pairs,
+    pairs: pairsRepaired,
     activeIdentityId: ensured.activeIdentityId,
     sessions: slice.sessions,
+    plans: slice.plans ?? [],
   };
 }
 function reconcileChallengeAutoStatus(
@@ -112,6 +120,7 @@ export type TradeLogState = {
   pairs: HedgePair[];
   challenges: Challenge[];
   identities: Identity[];
+  plans: PhasePlan[];
   /** Overview KPI scope; hydrated from storage or defaulted by repair. */
   activeIdentityId: string | null;
 
@@ -156,10 +165,16 @@ export type TradeLogState = {
     patch: { manuallySetStatus?: boolean; status?: PairStatus }
   ) => void;
 
+  addPlan: (input: PhasePlanCreateInput) => string | null;
+  updatePlan: (id: string, patch: Partial<Omit<PhasePlan, "id">>) => void;
+  deletePlan: (id: string) => boolean;
+  linkPlanToHedgePair: (planId: string, hedgePairId: string) => void;
+
   getTrade: (id: string) => LogTrade | undefined;
   getSession: (id: string) => LogSession | undefined;
   getChallenge: (id: string) => Challenge | undefined;
   getIdentity: (id: string) => Identity | undefined;
+  getPlan: (id: string) => PhasePlan | undefined;
 };
 
 export const useTradingStore = create<TradeLogState>()(
@@ -170,6 +185,7 @@ export const useTradingStore = create<TradeLogState>()(
       pairs: [],
       challenges: [],
       identities: [],
+      plans: [],
       activeIdentityId: null,
 
       setActiveIdentityId(identityId) {
@@ -560,6 +576,7 @@ export const useTradingStore = create<TradeLogState>()(
           combinedPnl: 0,
           status: "open",
           manuallySetStatus: false,
+          planId: null,
           createdAt: iso,
           updatedAt: iso,
         };
@@ -656,6 +673,66 @@ export const useTradingStore = create<TradeLogState>()(
       getIdentity(id) {
         return get().identities.find((i) => i.id === id);
       },
+
+      getPlan(id) {
+        return get().plans.find((p) => p.id === id);
+      },
+
+      addPlan(input) {
+        const stGate = get();
+        const challenge = stGate.challenges.find((c) => c.id === input.challengeId);
+        if (!challenge || !challengeAcceptsNewPropTrades(challenge)) return null;
+
+        // Validate required fields
+        if (input.propTpUsd <= 0 || input.propSlUsd <= 0) return null;
+        if (input.personalTargetProfit <= 0 || input.personalPointValue <= 0) return null;
+        if (input.lotStep <= 0 || input.minLot <= 0) return null;
+
+        const id = newId();
+        const iso = nowIso();
+
+        set((s) => ({
+          plans: [
+            {
+              ...input,
+              id,
+              createdAt: iso,
+              updatedAt: iso,
+            },
+            ...s.plans,
+          ],
+        }));
+        
+        return id;
+      },
+
+      updatePlan(id, patch) {
+        const iso = nowIso();
+        set((s) => ({
+          plans: s.plans.map((p) =>
+            p.id === id ? { ...p, ...patch, updatedAt: iso } : p
+          ),
+        }));
+      },
+
+      deletePlan(id) {
+        set((s) => ({
+          plans: s.plans.filter((p) => p.id !== id),
+        }));
+        return true;
+      },
+
+      linkPlanToHedgePair(planId, hedgePairId) {
+        const iso = nowIso();
+        set((s) => ({
+          plans: s.plans.map((p) =>
+            p.id === planId ? { ...p, hedgePairId, status: "open", updatedAt: iso } : p
+          ),
+          pairs: s.pairs.map((pair) =>
+            pair.id === hedgePairId ? { ...pair, planId, updatedAt: iso } : pair
+          ),
+        }));
+      },
     }),
     {
       name: TRADE_LOG_ROOT_KEY,
@@ -666,6 +743,7 @@ export const useTradingStore = create<TradeLogState>()(
         pairs: st.pairs,
         challenges: st.challenges,
         identities: st.identities,
+        plans: st.plans,
         activeIdentityId: st.activeIdentityId,
       }),
       version: STORAGE_VERSION,
@@ -676,6 +754,7 @@ export const useTradingStore = create<TradeLogState>()(
           pairs?: unknown;
           challenges?: Challenge[];
           identities?: Identity[];
+          plans?: PhasePlan[];
           activeIdentityId?: string | null;
         };
         let challenges = p.challenges ?? [];
@@ -725,6 +804,16 @@ export const useTradingStore = create<TradeLogState>()(
             personalIds.has(t.id) ? { ...t, challengeId: null } : t
           );
         }
+        if (fromVersion < 9) {
+          pairs = pairs.map((p) => ({
+            ...p,
+            planId:
+              (p as { planId?: string | null }).planId != null &&
+              String((p as { planId?: string | null }).planId).trim() !== ""
+                ? String((p as { planId?: string | null }).planId)
+                : null,
+          }));
+        }
 
         const identitiesMigrate: Identity[] = Array.isArray(p.identities)
           ? [...p.identities]
@@ -733,6 +822,28 @@ export const useTradingStore = create<TradeLogState>()(
           typeof p.activeIdentityId === "string"
             ? p.activeIdentityId
             : null;
+
+        // Version 9: Add plans array
+        let plans: PhasePlan[] = [];
+        if (fromVersion < 9) {
+          plans = [];
+        } else {
+          plans = Array.isArray(p.plans) ? [...p.plans] : [];
+        }
+
+        // Version 10: Add enhanced calculation fields to plans
+        if (fromVersion < 10) {
+          plans = plans.map((plan) => ({
+            ...plan,
+            rawLots: (plan as any).rawLots ?? 0,
+            roundedLots: (plan as any).roundedLots ?? 0,
+            contractLotValue: (plan as any).contractLotValue ?? 0,
+            hedgeBudgetRemaining: (plan as any).hedgeBudgetRemaining ?? 0,
+            breakevenPersonalResult: (plan as any).breakevenPersonalResult ?? 0,
+            hedgeStrengthLevel: (plan as any).hedgeStrengthLevel ?? 'adequate',
+            riskWarnings: (plan as any).riskWarnings ?? [],
+          }));
+        }
 
         const synced = ensureIdentityConsistency({
           identities: identitiesMigrate,
@@ -749,6 +860,7 @@ export const useTradingStore = create<TradeLogState>()(
           trades: synced.trades,
           pairs,
           identities: synced.identities,
+          plans,
           activeIdentityId: synced.activeIdentityId,
         };
       },
@@ -778,6 +890,7 @@ export async function downloadTradeLogBackupJson(): Promise<void> {
       pairs: st.pairs,
       challenges: st.challenges,
       identities: st.identities,
+      plans: st.plans,
       activeIdentityId: st.activeIdentityId,
     });
   } catch (e) {
@@ -852,6 +965,7 @@ export async function importTradeLogBackupJsonText(
     pairs: st.pairs,
     challenges: st.challenges,
     identities: st.identities,
+    plans: st.plans,
     activeIdentityId: st.activeIdentityId,
   };
 
@@ -882,6 +996,7 @@ export function resetTradeLogWorkspace() {
     pairs: [],
     challenges: [],
     identities: [],
+    plans: [],
     activeIdentityId: null,
   });
   useTradingStore.persist.clearStorage();

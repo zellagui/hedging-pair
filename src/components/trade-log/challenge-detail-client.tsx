@@ -9,6 +9,9 @@ import { useShallow } from "zustand/react/shallow";
 import { AddHedgePairDialog } from "@/components/trade-log/add-hedge-pair-dialog";
 import { ChallengeFormDialog } from "@/components/trade-log/challenge-form-dialog";
 import { ChallengeHedgePairsTable } from "@/components/trade-log/challenge-hedge-pairs-table";
+import { ChallengePhasePlanner } from "@/components/trade-log/challenge-phase-planner";
+import { PhasePlanCard } from "@/components/trade-log/phase-plan-card";
+import { EditPlanDialog } from "@/components/trade-log/edit-plan-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,8 +37,9 @@ import {
   getPairsByChallengeId,
 } from "@/models/trade-log/challenges";
 import { formatMoney, formatShortMonthDay, localTodayYmd } from "@/models/trade-log/format";
+import { computeHedgeResults } from "@/models/trade-log/hedge-planner";
 import { useTradingStore } from "@/models/trade-log/store";
-import type { Challenge, ChallengeStatus } from "@/models/trade-log/types";
+import type { Challenge, ChallengeStatus, PhasePlan } from "@/models/trade-log/types";
 import { cn } from "@/lib/utils";
 
 const QUICK_STATUS_ORDER: ChallengeStatus[] = [
@@ -189,30 +193,41 @@ export function ChallengeDetailClient({
     trades,
     pairs,
     identities,
+    plans,
     addTrade,
     linkPair,
     updateTrade,
     updateChallenge,
     deleteHedgePairCascade,
     deleteChallengeCascade,
+    addPlan,
+    updatePlan,
+    deletePlan,
+    linkPlanToHedgePair,
   } = useTradingStore(
     useShallow((s) => ({
       challenges: s.challenges,
       trades: s.trades,
       pairs: s.pairs,
       identities: s.identities,
+      plans: s.plans,
       addTrade: s.addTrade,
       linkPair: s.linkPair,
       updateTrade: s.updateTrade,
       updateChallenge: s.updateChallenge,
       deleteHedgePairCascade: s.deleteHedgePairCascade,
       deleteChallengeCascade: s.deleteChallengeCascade,
+      addPlan: s.addPlan,
+      updatePlan: s.updatePlan,
+      deletePlan: s.deletePlan,
+      linkPlanToHedgePair: s.linkPlanToHedgePair,
     }))
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddNonce, setQuickAddNonce] = useState(0);
+  const [prefillData, setPrefillData] = useState<any>(null);
   const [deleteChallengeOpen, setDeleteChallengeOpen] = useState(false);
   const [deleteChallengeConfirm, setDeleteChallengeConfirm] = useState("");
   const [deleteChallengeError, setDeleteChallengeError] = useState<
@@ -223,6 +238,10 @@ export function ChallengeDetailClient({
   const [payoutAmountStr, setPayoutAmountStr] = useState("");
   const [payoutDateStr, setPayoutDateStr] = useState(() => localTodayYmd());
   const [payoutError, setPayoutError] = useState<string | null>(null);
+  
+  // Plan editing state
+  const [editPlanOpen, setEditPlanOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<PhasePlan | null>(null);
   const statusMenuRef = useRef<HTMLDetailsElement>(null);
 
   const challenge = useMemo(
@@ -243,6 +262,18 @@ export function ChallengeDetailClient({
           : a.createdAt.localeCompare(b.createdAt)
       ),
     [challengeId, trades, pairs]
+  );
+
+  const challengePlans = useMemo(
+    () =>
+      plans
+        .filter((p) => p.challengeId === challengeId)
+        .sort((a, b) =>
+          a.phaseNumber !== b.phaseNumber
+            ? a.phaseNumber - b.phaseNumber
+            : a.createdAt.localeCompare(b.createdAt)
+        ),
+    [plans, challengeId]
   );
 
   useEffect(() => {
@@ -412,13 +443,30 @@ export function ChallengeDetailClient({
 
       <AddHedgePairDialog
         open={quickAddOpen}
-        onOpenChange={setQuickAddOpen}
+        onOpenChange={(open) => {
+          setQuickAddOpen(open);
+          if (!open) {
+            setPrefillData(null);
+          }
+        }}
         formKey={quickAddNonce}
         challengeId={c.id}
         challengeName={c.name}
         locked={propTradesLocked}
+        prefill={prefillData}
         addTrade={addTrade}
         linkPair={linkPair}
+      />
+
+      <EditPlanDialog
+        open={editPlanOpen}
+        plan={editingPlan}
+        onOpenChange={setEditPlanOpen}
+        onSave={(planId, updates) => {
+          updatePlan(planId, updates);
+          setFeedback("Plan updated successfully.");
+          setEditingPlan(null);
+        }}
       />
 
       {propTradesLocked ? (
@@ -461,48 +509,29 @@ export function ChallengeDetailClient({
         ← {workspaceLabel}
       </Link>
 
-      {/* Zone 1 — Sticky header + single money summary */}
-      <div
-        className={cn(
-          "sticky top-0 z-20 rounded-xl border border-border bg-background/95 p-4 shadow-sm backdrop-blur-md",
-          "supports-[backdrop-filter]:bg-background/80"
-        )}
-      >
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight break-words wrap-break-word">
-              {c.name}
-            </h1>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {statusBadgeSpec(c)}
-              <span className="text-sm tabular-nums text-red-500">
-                Fee {formatMoney(-c.fee)}
-              </span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-sm text-muted-foreground">
-                {challengePairs.length} phase{challengePairs.length === 1 ? "" : "s"}
-                {openLegs > 0 ? ` · ${openLegs} open` : ""}
-              </span>
-            </div>
+      {/* Compact Sticky Header */}
+      <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur px-6 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-lg font-semibold">{c.name}</h1>
+            {statusBadgeSpec(c)}
+            <span className="text-sm text-muted-foreground">Fee: {formatMoney(c.fee)}</span>
           </div>
-
-          <div className="flex flex-col gap-2 sm:items-end">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-sm text-muted-foreground">Your net</div>
+              <div className="text-lg font-semibold">{formatMoney(realTotal)}</div>
+            </div>
+            <div className="flex items-center gap-2">
               <Button
-                type="button"
-                size="sm"
-                disabled={propTradesLocked}
-                title={
-                  propTradesLocked
-                    ? "This challenge does not accept new trades."
-                    : undefined
-                }
                 onClick={() => {
+                  setPrefillData(null);
                   setQuickAddNonce((n) => n + 1);
                   setQuickAddOpen(true);
                 }}
+                disabled={propTradesLocked}
               >
-                Log phase
+                Log Trade
               </Button>
               <Button
                 type="button"
@@ -512,44 +541,6 @@ export function ChallengeDetailClient({
               >
                 Edit
               </Button>
-              {canLogPayout ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setPayoutExpanded((v) => !v);
-                    setPayoutError(null);
-                  }}
-                >
-                  Log payout
-                </Button>
-              ) : null}
-              {quickNext.length > 0 ? (
-                <details ref={statusMenuRef} className="relative">
-                  <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground [&::-webkit-details-marker]:hidden">
-                    Status
-                    <ChevronDown className="size-3.5 opacity-70" />
-                  </summary>
-                  <div className="absolute right-0 z-30 mt-1 flex min-w-[11rem] flex-col gap-1 rounded-md border border-border bg-popover p-1.5 shadow-md">
-                    {quickNext.map((st) => (
-                      <Button
-                        key={st}
-                        type="button"
-                        size="sm"
-                        variant={st === "failed" ? "destructive" : "ghost"}
-                        className="h-8 justify-start font-normal"
-                        onClick={() => {
-                          applyQuickStatus(st);
-                          statusMenuRef.current?.removeAttribute("open");
-                        }}
-                      >
-                        {quickStatusShortLabel(st)}
-                      </Button>
-                    ))}
-                  </div>
-                </details>
-              ) : null}
               <Button
                 type="button"
                 size="sm"
@@ -564,107 +555,12 @@ export function ChallengeDetailClient({
                 Delete
               </Button>
             </div>
-
-            {canLogPayout && payoutExpanded ? (
-              <div className="w-full max-w-md rounded-md border border-border bg-muted/30 p-3 text-left sm:ml-auto">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Records firm payout and marks challenge paid out.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <div className="relative min-w-[100px] flex-1">
-                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      $
-                    </span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      className="h-8 pl-7"
-                      placeholder="Amount"
-                      value={payoutAmountStr}
-                      onChange={(e) => setPayoutAmountStr(e.target.value)}
-                    />
-                  </div>
-                  <Input
-                    type="date"
-                    className="h-8 w-[140px]"
-                    value={
-                      payoutDateStr.length >= 10
-                        ? payoutDateStr.slice(0, 10)
-                        : payoutDateStr
-                    }
-                    onChange={(e) => setPayoutDateStr(e.target.value)}
-                  />
-                </div>
-                {payoutError ? (
-                  <p className="mt-1 text-xs text-destructive">{payoutError}</p>
-                ) : null}
-                <div className="mt-2 flex gap-2">
-                  <Button type="button" size="sm" onClick={savePayout}>
-                    Save payout
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setPayoutExpanded(false);
-                      setPayoutError(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
-
-        <div
-          className={cn(
-            "mt-4 rounded-lg border px-4 py-3",
-            realTotal >= 0 ? "border-green-500/25 bg-green-500/[0.06]" : "border-red-500/25 bg-red-500/[0.06]"
-          )}
-          title="Personal realized minus entry fee."
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Your net
-          </p>
-          <p
-            className={cn(
-              "mt-0.5 text-3xl font-bold tabular-nums tracking-tight",
-              realTotal > 0 && "text-green-500",
-              realTotal < 0 && "text-red-500",
-              realTotal === 0 && "text-muted-foreground"
-            )}
-          >
-            {formatMoney(realTotal)}
-          </p>
-          <p
-            className={cn(
-              "mt-2 text-sm tabular-nums",
-              personalLive > 0 && "text-green-600 dark:text-green-400",
-              personalLive < 0 && "text-red-600 dark:text-red-400",
-              personalLive === 0 && "text-muted-foreground"
-            )}
-          >
-            Personal hedge {formatMoney(personalLive)}
-            {hedgeDiffers ? (
-              <span className="font-normal text-muted-foreground">
-                {" "}
-                (closed {formatMoney(personalClosed)})
-              </span>
-            ) : null}
-          </p>
-        </div>
-
-        {feedback ? (
-          <p className="mt-3 rounded-md border border-green-500/35 bg-green-500/10 px-3 py-2 text-sm text-green-800 dark:text-green-100">
-            {feedback}
-          </p>
-        ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      {/* KPI Section */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 px-6 py-4">
         <DetailKpi label="Phases (total)" value={String(challengePairs.length)} />
         <DetailKpi
           label="Open legs (live)"
@@ -723,14 +619,132 @@ export function ChallengeDetailClient({
         </div>
       </details>
 
-      {/* Zone 3 — Phases */}
-      <Card className="border-border shadow-sm">
-        <CardHeader className="border-b border-border py-4">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Phases
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4">
+      {/* Main Planner */}
+      <div className="px-6 py-8">
+        <ChallengePhasePlanner
+          challenge={c}
+          plans={challengePlans}
+          onSavePlan={(planData) => {
+            const planId = addPlan(planData);
+            if (planId) {
+              setFeedback("Plan saved successfully.");
+            }
+          }}
+          onOpenLogDialog={(prefill) => {
+            setPrefillData(prefill);
+            setQuickAddNonce((n) => n + 1);
+            setQuickAddOpen(true);
+          }}
+        />
+      </div>
+
+      {/* Quiet Secondary Content */}
+      <div className="border-t border-border bg-muted/10 px-6 py-6">
+        {/* Saved Plans */}
+        {challengePlans.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-sm font-medium text-muted-foreground mb-4">Saved Plans</h3>
+            <div className="space-y-2">
+              {challengePlans.map(plan => {
+                const linkedPair = pairs.find(p => p.planId === plan.id);
+                return (
+                  <PhasePlanCard
+                    key={plan.id}
+                    plan={plan}
+                    linkedPairExists={linkedPair != null}
+                    onEdit={(plan) => {
+                      setEditingPlan(plan);
+                      setEditPlanOpen(true);
+                    }}
+                    onDelete={(planId) => {
+                      const ok = window.confirm("Delete this plan?");
+                      if (ok) {
+                        deletePlan(planId);
+                        setFeedback("Plan deleted.");
+                      }
+                    }}
+                    onExecute={(plan) => {
+                      // Calculate results to get full trade details
+                      const challenge = challenges.find(c => c.id === plan.challengeId);
+                      if (!challenge) return;
+                      
+                      try {
+                        const hedgeInput = {
+                          propTpUsd: plan.propTpUsd,
+                          propSlUsd: plan.propSlUsd,
+                          propContracts: plan.propContracts,
+                          personalTargetProfit: plan.personalTargetProfit,
+                          personalPointValue: plan.personalPointValue,
+                          buffer: plan.buffer,
+                          lotStep: plan.lotStep,
+                          minLot: plan.minLot,
+                          challengeFee: challenge.fee,
+                          expectedPayout: plan.expectedPayout
+                        };
+                        
+                        const results = computeHedgeResults(hedgeInput);
+                        
+                        // Calculate personal win/loss amounts for context
+                        const personalWinUsd = results.personalTpPoints * results.roundedLots * plan.personalPointValue;
+                        const personalLossUsd = results.personalSlPoints * results.roundedLots * plan.personalPointValue;
+                        
+                        // Calculate reasonable entry price from USD amounts and points
+                        const estimatedEntryPrice = results.propDirection === "long" 
+                          ? results.propTpUsd / plan.propContracts / 20 - results.propTpPoints
+                          : results.propTpUsd / plan.propContracts / 20 + results.propTpPoints;
+
+                        // Complete prefill data matching live planner
+                        setPrefillData({
+                          // Basic trade info
+                          symbol: "ES",
+                          direction: results.personalDirection,
+                          size: results.roundedLots,
+                          
+                          // Calculated entry price for price calculations
+                          entryPrice: Math.round(estimatedEntryPrice * 100) / 100, // Round to 2 decimals
+                          
+                          // Expected amounts for validation
+                          personalPnl: personalWinUsd,
+                          propPnl: results.propTpUsd, // Expected prop side profit
+                          
+                          // Additional hedge context
+                          propContracts: plan.propContracts,
+                          propDirection: results.propDirection,
+                          propTpUsd: results.propTpUsd,
+                          propSlUsd: results.propSlUsd,
+                          propTpPoints: results.propTpPoints,
+                          propSlPoints: results.propSlPoints,
+                          personalTpPoints: results.personalTpPoints,
+                          personalSlPoints: results.personalSlPoints,
+                          hedgeTarget: plan.personalTargetProfit,
+                          buffer: plan.buffer,
+                          personalLossUsd: personalLossUsd,
+                          hedgePlanId: plan.id, // Link to the executed plan
+                        });
+                      } catch (error) {
+                        console.error("Error calculating plan for prefill:", error);
+                        // Fallback to basic prefill
+                        const direction = plan.propTpUsd > plan.propSlUsd ? "long" : "short";
+                        setPrefillData({
+                          symbol: plan.propSymbol,
+                          direction: direction,
+                        });
+                      }
+                      
+                      setQuickAddNonce((n) => n + 1);
+                      setQuickAddOpen(true);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        
+        {/* Phases Table */}
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-4">Phase History</h3>
           <ChallengeHedgePairsTable
             pairs={challengePairs}
             trades={trades}
@@ -739,12 +753,13 @@ export function ChallengeDetailClient({
             deleteHedgePairCascade={deleteHedgePairCascade}
             unlinkDisabled={propTradesLocked}
             onRequestLogPhase={() => {
+              setPrefillData(null);
               setQuickAddNonce((n) => n + 1);
               setQuickAddOpen(true);
             }}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

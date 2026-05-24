@@ -1,5 +1,5 @@
 import { normalizeLedgerPhases } from "./challenge-ledger";
-import type { Challenge, HedgePair, Identity, LogSession, LogTrade } from "./types";
+import type { Challenge, HedgePair, Identity, LogSession, LogTrade, PhasePlan } from "./types";
 
 function nowIso() {
   return new Date().toISOString();
@@ -183,6 +183,12 @@ export function normalizePair(row: unknown): HedgePair | null {
       ? Math.max(1, Math.floor(Number(phaseRaw)))
       : 1;
 
+  const planIdRaw = r.planId;
+  const planId =
+    planIdRaw != null && String(planIdRaw).trim() !== ""
+      ? String(planIdRaw)
+      : null;
+
   return {
     id: r.id,
     phaseNumber,
@@ -191,6 +197,84 @@ export function normalizePair(row: unknown): HedgePair | null {
     combinedPnl: Number(r.combinedPnl) || 0,
     status,
     manuallySetStatus: Boolean(r.manuallySetStatus),
+    planId,
+    createdAt: r.createdAt != null ? String(r.createdAt) : iso,
+    updatedAt: r.updatedAt != null ? String(r.updatedAt) : iso,
+  };
+}
+
+export function normalizePlan(row: unknown): PhasePlan | null {
+  if (!row || typeof row !== "object") return null;
+  const r = row as Record<string, unknown>;
+  if (typeof r.id !== "string") return null;
+  if (typeof r.challengeId !== "string") return null;
+  if (typeof r.propSymbol !== "string") return null;
+
+  const st = r.status;
+  const status: PhasePlan["status"] =
+    st === "planned" || st === "open" || st === "closed" ? st : "planned";
+
+  const roundMode: PhasePlan["roundMode"] =
+    r.roundMode === "nearest" ? "nearest" : "up";
+
+  const iso = nowIso();
+  const phaseRaw = r.phaseNumber;
+  const phaseNumber =
+    phaseRaw != null && Number.isFinite(Number(phaseRaw))
+      ? Math.max(1, Math.floor(Number(phaseRaw)))
+      : 1;
+
+  const hedgePairIdRaw = r.hedgePairId;
+  const hedgePairId =
+    hedgePairIdRaw != null && String(hedgePairIdRaw).trim() !== ""
+      ? String(hedgePairIdRaw)
+      : null;
+
+  const personalEntryPriceRaw = r.personalEntryPrice;
+  const personalEntryPrice =
+    personalEntryPriceRaw != null && personalEntryPriceRaw !== "" && Number.isFinite(Number(personalEntryPriceRaw))
+      ? Number(personalEntryPriceRaw)
+      : null;
+
+  // Handle both old (points-based) and new (USD-based) models
+  let propTpUsd = Number(r.propTpUsd) || 0;
+  let propSlUsd = Number(r.propSlUsd) || 0;
+  
+  // Migration: Convert old points-based data to USD if needed
+  if (propTpUsd === 0 && propSlUsd === 0) {
+    const oldTpPoints = Number(r.propTpPoints) || 0;
+    const oldSlPoints = Number(r.propSlPoints) || 0;
+    const contracts = Number(r.propContracts) || 1;
+    const USD_PER_POINT_PER_CONTRACT = 20;
+    
+    if (oldTpPoints > 0 && oldSlPoints > 0) {
+      propTpUsd = oldTpPoints * contracts * USD_PER_POINT_PER_CONTRACT;
+      propSlUsd = oldSlPoints * contracts * USD_PER_POINT_PER_CONTRACT;
+    }
+  }
+
+  // Handle both old and new field names for personal target
+  const personalTargetProfit = Number(r.personalTargetProfit) || Number(r.targetProfit) || 0;
+
+  return {
+    id: r.id,
+    challengeId: r.challengeId,
+    phaseNumber,
+    propTpUsd,
+    propSlUsd,
+    propContracts: Number(r.propContracts) || 1,
+    personalTargetProfit,
+    personalPointValue: Number(r.personalPointValue) || 1,
+    buffer: Number(r.buffer) || 1.5,
+    lotStep: Number(r.lotStep) || 0.1,
+    minLot: Number(r.minLot) || 0.1,
+    roundMode,
+    expectedPayout: Number(r.expectedPayout) || 0,
+    propSymbol: r.propSymbol,
+    personalSymbol: r.personalSymbol != null ? String(r.personalSymbol) : r.propSymbol,
+    personalEntryPrice,
+    hedgePairId,
+    status,
     createdAt: r.createdAt != null ? String(r.createdAt) : iso,
     updatedAt: r.updatedAt != null ? String(r.updatedAt) : iso,
   };

@@ -108,6 +108,15 @@ export type LogTrade = {
   fees: number;
   notes: string;
   screenshot: string | null;
+  
+  // Performance tracking vs planned amounts
+  plannedPnl?: number;           // Expected P&L from hedge plan
+  actualPnl?: number;           // Actual P&L when closed
+  plannedTpPoints?: number;     // Planned TP in points
+  plannedSlPoints?: number;     // Planned SL in points
+  hedgePlanId?: string;         // Link to original plan
+  performanceVariance?: number;  // Actual vs planned difference
+  
   createdAt: string;
   updatedAt: string;
 };
@@ -126,6 +135,56 @@ export type HedgePair = {
   combinedPnl: number;
   status: PairStatus;
   manuallySetStatus: boolean;
+  /** Optional link back to the plan that generated this pair. */
+  planId: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type PlanStatus = "planned" | "open" | "closed";
+
+export type RoundMode = "up" | "nearest";
+
+/**
+ * Pre-planned hedge pair with streamlined inputs.
+ * Stores only essential user inputs; all derived values computed on read via hedge-planner.ts.
+ */
+export type PhasePlan = {
+  id: string;
+  challengeId: string;
+  phaseNumber: number;
+
+  // NEW: Clean USD-based inputs only
+  propTpUsd: number;
+  propSlUsd: number;  
+  propContracts: number;
+  
+  // Personal inputs (simplified)
+  personalTargetProfit: number;
+  personalPointValue: number;
+  buffer: number;
+  lotStep: number;
+  minLot: number;
+  roundMode: RoundMode;
+  
+  // Context (keep)
+  expectedPayout: number;
+  propSymbol: string;
+  personalSymbol: string;
+  personalEntryPrice: number | null; // Only for execution reference
+  
+  // Execution tracking
+  hedgePairId: string | null;
+  status: PlanStatus;
+  
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** User-provided plan fields for creating new plans. */
+export type PhasePlanCreateInput = Omit<
+  PhasePlan,
+  | "id"
+  | "createdAt"
+  | "updatedAt"
+>;

@@ -63,6 +63,7 @@ function pickPersistSlice(
     | "pairs"
     | "challenges"
     | "identities"
+    | "plans"
     | "activeIdentityId"
   >
 ): PersistedTradeLogSlice {
@@ -72,6 +73,7 @@ function pickPersistSlice(
     pairs: st.pairs,
     challenges: st.challenges,
     identities: st.identities,
+    plans: st.plans,
     activeIdentityId: st.activeIdentityId,
   };
 }
