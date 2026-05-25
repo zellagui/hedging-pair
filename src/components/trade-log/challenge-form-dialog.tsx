@@ -26,6 +26,11 @@ import {
   challengeStatusLabel,
   selectableChallengeStatuses,
 } from "@/models/trade-log/challenges";
+import {
+  dateFromCreatedAt,
+  localTodayYmd,
+  ymdToIsoPreserveTime,
+} from "@/models/trade-log/format";
 import { useTradingStore } from "@/models/trade-log/store";
 import type { ChallengeStatus } from "@/models/trade-log/types";
 
@@ -140,6 +145,9 @@ function ChallengeFormInner({
   const [payoutAtStr, setPayoutAtStr] = useState(
     () => existing?.payoutAt?.trim() ?? ""
   );
+  const [startedAtStr, setStartedAtStr] = useState(() =>
+    existing?.createdAt ? dateFromCreatedAt(existing.createdAt) : localTodayYmd()
+  );
 
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -199,6 +207,12 @@ function ChallengeFormInner({
         patch.payoutAmount = null;
         patch.payoutAt = null;
       }
+      if (startedAtStr.trim()) {
+        patch.createdAt = ymdToIsoPreserveTime(
+          startedAtStr.trim(),
+          existing.createdAt
+        );
+      }
       updateChallenge(existing.id, patch);
       onOpenChange(false);
       return;
@@ -218,6 +232,9 @@ function ChallengeFormInner({
       payoutAt: null,
       disbursementAt: null,
       ledgerPhases,
+      createdAt: startedAtStr.trim()
+        ? ymdToIsoPreserveTime(startedAtStr.trim())
+        : undefined,
     });
 
     if (id == null) {
@@ -424,6 +441,19 @@ function ChallengeFormInner({
               (new challenges always start here)
             </p>
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="ch-started">Started date</Label>
+            <Input
+              id="ch-started"
+              type="date"
+              value={startedAtStr}
+              onChange={(e) => setStartedAtStr(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              When this challenge began in your journal (used for sorting and KPIs).
+            </p>
+          </div>
 
           {existing && status === "paid_out" ? (
             <div className="grid gap-3 border-t border-border pt-3">

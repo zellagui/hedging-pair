@@ -12,8 +12,7 @@ export type ChallengeStatus =
   | "passed"
   | "failed"
   | "funded"
-  | "paid_out"
-  | "archived";
+  | "paid_out";
 
 /** Trader / legal identity grouping challenges and trades in one workspace. */
 export type Identity = {
@@ -162,7 +161,16 @@ export type PhasePlan = {
   // Personal inputs (simplified)
   personalTargetProfit: number;
   personalPointValue: number;
+  /** Legacy single buffer — migrated to bufferPropSl/bufferPropTp when missing */
   buffer: number;
+  /** Gap (pts): personal TP = prop SL − bufferPropSl − bufferPersonalTp */
+  bufferPropSl: number;
+  /** Gap (pts): personal SL = prop TP + bufferPropTp + bufferPersonalSl */
+  bufferPropTp: number;
+  /** Extra gap on personal TP side (subtracted after prop SL buffer) */
+  bufferPersonalTp: number;
+  /** Extra gap on personal SL side (added after prop TP buffer) */
+  bufferPersonalSl: number;
   lotStep: number;
   minLot: number;
   roundMode: RoundMode;

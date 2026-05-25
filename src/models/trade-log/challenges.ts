@@ -19,21 +19,30 @@ export function challengeAcceptsNewPropTrades(c: Challenge): boolean {
   );
 }
 
+/** All selectable challenge statuses (archived removed — migrated to failed). */
+export const ALL_CHALLENGE_STATUSES: readonly ChallengeStatus[] = [
+  "evaluation",
+  "passed",
+  "failed",
+  "funded",
+  "paid_out",
+];
+
+const OTHER_STATUSES = (current: ChallengeStatus): ChallengeStatus[] =>
+  ALL_CHALLENGE_STATUSES.filter((s) => s !== current);
+
 /**
- * Allowed manual transitions from each status (evaluation / funded / passed align
- * with {@link challengeAcceptsNewPropTrades}; archived is terminal).
+ * Allowed manual transitions — any status may move to any other valid status.
  */
 export const CHALLENGE_STATUS_TRANSITIONS: Record<
   ChallengeStatus,
   readonly ChallengeStatus[]
 > = {
-  evaluation: ["passed", "failed", "funded", "archived"],
-  /** `evaluation` corrects mistaken advances in the journal. */
-  funded: ["evaluation", "paid_out", "failed", "archived"],
-  passed: ["evaluation", "funded", "paid_out", "archived"],
-  failed: ["archived"],
-  paid_out: ["archived"],
-  archived: [],
+  evaluation: OTHER_STATUSES("evaluation"),
+  passed: OTHER_STATUSES("passed"),
+  failed: OTHER_STATUSES("failed"),
+  funded: OTHER_STATUSES("funded"),
+  paid_out: OTHER_STATUSES("paid_out"),
 };
 
 export function isValidChallengeStatusTransition(
@@ -41,25 +50,14 @@ export function isValidChallengeStatusTransition(
   to: ChallengeStatus
 ): boolean {
   if (from === to) return true;
-  return CHALLENGE_STATUS_TRANSITIONS[from].includes(to);
+  return ALL_CHALLENGE_STATUSES.includes(to);
 }
 
-/** Status options in the form: create allows any (imports); edit restricts to current + allowed next. */
+/** Status options in create/edit forms — always full list. */
 export function selectableChallengeStatuses(
-  persistedStatus: ChallengeStatus | null
+  _persistedStatus: ChallengeStatus | null
 ): ChallengeStatus[] {
-  if (persistedStatus == null) {
-    return [
-      "evaluation",
-      "passed",
-      "failed",
-      "funded",
-      "paid_out",
-      "archived",
-    ];
-  }
-  const targets = CHALLENGE_STATUS_TRANSITIONS[persistedStatus];
-  return [persistedStatus, ...targets];
+  return [...ALL_CHALLENGE_STATUSES];
 }
 
 export function challengeStatusLabel(status: ChallengeStatus): string {
@@ -74,8 +72,6 @@ export function challengeStatusLabel(status: ChallengeStatus): string {
       return "Funded";
     case "paid_out":
       return "Paid out";
-    case "archived":
-      return "Archived";
     default:
       return status;
   }

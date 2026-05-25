@@ -25,7 +25,7 @@ export function normalizeChallenge(row: unknown): Challenge | null {
   if (typeof r.id !== "string" || typeof r.name !== "string") return null;
 
   const st = r.status;
-  const status: Challenge["status"] =
+  const rawStatus =
     st === "evaluation" ||
     st === "passed" ||
     st === "failed" ||
@@ -34,6 +34,8 @@ export function normalizeChallenge(row: unknown): Challenge | null {
     st === "archived"
       ? st
       : "evaluation";
+  const status: Challenge["status"] =
+    rawStatus === "archived" ? "failed" : rawStatus;
 
   const iso = nowIso();
   const payoutRaw = r.payoutAmount;
@@ -255,6 +257,7 @@ export function normalizePlan(row: unknown): PhasePlan | null {
 
   // Handle both old and new field names for personal target
   const personalTargetProfit = Number(r.personalTargetProfit) || Number(r.targetProfit) || 0;
+  const legacyBuffer = Number(r.buffer) || 0.5;
 
   return {
     id: r.id,
@@ -265,7 +268,11 @@ export function normalizePlan(row: unknown): PhasePlan | null {
     propContracts: Number(r.propContracts) || 1,
     personalTargetProfit,
     personalPointValue: Number(r.personalPointValue) || 1,
-    buffer: Number(r.buffer) || 1.5,
+    buffer: legacyBuffer,
+    bufferPropSl: Number(r.bufferPropSl) || legacyBuffer,
+    bufferPropTp: Number(r.bufferPropTp) || legacyBuffer,
+    bufferPersonalTp: Number(r.bufferPersonalTp) || 0,
+    bufferPersonalSl: Number(r.bufferPersonalSl) || 0,
     lotStep: Number(r.lotStep) || 0.1,
     minLot: Number(r.minLot) || 0.1,
     roundMode,

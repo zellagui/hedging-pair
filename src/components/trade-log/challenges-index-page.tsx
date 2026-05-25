@@ -41,11 +41,9 @@ function statusBadge(c: Challenge) {
       ? "🔵"
       : status === "failed"
         ? "🔴"
-        : status === "archived"
-          ? "🟠"
-          : status === "funded" || status === "passed" || status === "paid_out"
-            ? "🟢"
-            : "⚪";
+        : status === "funded" || status === "passed" || status === "paid_out"
+          ? "🟢"
+          : "⚪";
   const inner = (
     <span className="inline-flex items-center gap-1.5">
       <span aria-hidden>{emoji}</span>
@@ -73,16 +71,6 @@ function statusBadge(c: Challenge) {
       </Badge>
     );
   }
-  if (status === "archived") {
-    return (
-      <Badge
-        variant="outline"
-        className="border-amber-500/50 text-[11px] font-medium text-amber-950 dark:text-amber-100"
-      >
-        {inner}
-      </Badge>
-    );
-  }
   return (
     <Badge variant="secondary" className="text-[11px] font-medium">
       {inner}
@@ -97,7 +85,6 @@ const STATUS_FILTER_OPTIONS: { value: "all" | ChallengeStatus; label: string }[]
   { value: "funded", label: "Funded" },
   { value: "failed", label: "Failed" },
   { value: "paid_out", label: "Paid out" },
-  { value: "archived", label: "Archived" },
 ];
 
 function ListKpiTile({
@@ -294,7 +281,7 @@ export function ChallengesIndexPage({
               <span className="font-medium text-foreground">
                 Benefit excl. evaluation
               </span>{" "}
-              is Σ net real for passed, funded, failed, paid out, and archived only.
+              is Σ net real for passed, funded, failed, and paid out only.
             </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <ListKpiTile

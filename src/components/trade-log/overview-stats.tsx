@@ -119,7 +119,7 @@ export function WorkspaceOverviewPanels({ digest }: Props) {
           <CardContent className="space-y-3">
             {digest.liveChallengeRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No active runway in this workspace. Create an evaluation row or open the challenge board to revive something archived.
+                No active runway in this workspace. Create an evaluation or open the challenge board.
               </p>
             ) : (
               <ul className="space-y-3">
@@ -130,7 +130,7 @@ export function WorkspaceOverviewPanels({ digest }: Props) {
             )}
             {digest.inactiveChallengeCount > 0 ? (
               <p className="border-t border-border pt-3 text-xs text-muted-foreground">
-                {digest.inactiveChallengeCount} archived or terminal challenge
+                {digest.inactiveChallengeCount} inactive challenge
                 {digest.inactiveChallengeCount === 1 ? "" : "s"}
                 {digest.archivedSummary.sampleNames.length ? (
                   <>

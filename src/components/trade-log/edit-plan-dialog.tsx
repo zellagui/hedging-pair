@@ -5,12 +5,14 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { resolveHedgeBuffers } from "@/models/trade-log/hedge-planner";
 import type { PhasePlan } from "@/models/trade-log/types";
 
 interface EditPlanDialogProps {
@@ -25,32 +27,38 @@ function qNum(s: string, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function EditPlanDialog({ 
-  open, 
-  plan, 
-  onOpenChange, 
-  onSave 
+export function EditPlanDialog({
+  open,
+  plan,
+  onOpenChange,
+  onSave,
 }: EditPlanDialogProps) {
   const [formData, setFormData] = useState({
     propTpUsd: "",
     propSlUsd: "",
     propContracts: "",
     personalTargetProfit: "",
-    buffer: "",
+    bufferPropSl: "",
+    bufferPropTp: "",
+    bufferPersonalTp: "",
+    bufferPersonalSl: "",
     expectedPayout: "",
   });
-  
+
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Reset form when plan changes
   useEffect(() => {
     if (plan) {
+      const buffers = resolveHedgeBuffers(plan);
       setFormData({
         propTpUsd: String(plan.propTpUsd),
         propSlUsd: String(plan.propSlUsd),
         propContracts: String(plan.propContracts),
         personalTargetProfit: String(plan.personalTargetProfit),
-        buffer: String(plan.buffer),
+        bufferPropSl: String(buffers.bufferPropSl),
+        bufferPropTp: String(buffers.bufferPropTp),
+        bufferPersonalTp: String(buffers.bufferPersonalTp),
+        bufferPersonalSl: String(buffers.bufferPersonalSl),
         expectedPayout: String(plan.expectedPayout),
       });
       setSubmitError(null);
@@ -58,19 +66,21 @@ export function EditPlanDialog({
   }, [plan]);
 
   const updateField = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     setSubmitError(null);
   };
 
   const handleSave = () => {
     if (!plan) return;
 
-    // Basic validation
     const propTpUsd = qNum(formData.propTpUsd);
     const propSlUsd = qNum(formData.propSlUsd);
     const propContracts = qNum(formData.propContracts);
     const personalTargetProfit = qNum(formData.personalTargetProfit);
-    const buffer = qNum(formData.buffer);
+    const bufferPropSl = qNum(formData.bufferPropSl);
+    const bufferPropTp = qNum(formData.bufferPropTp);
+    const bufferPersonalTp = qNum(formData.bufferPersonalTp);
+    const bufferPersonalSl = qNum(formData.bufferPersonalSl);
     const expectedPayout = qNum(formData.expectedPayout);
 
     if (propTpUsd <= 0 || propSlUsd <= 0) {
@@ -88,23 +98,29 @@ export function EditPlanDialog({
       return;
     }
 
-    if (buffer <= 0) {
-      setSubmitError("Buffer must be positive");
+    if (
+      bufferPropSl < 0 ||
+      bufferPropTp < 0 ||
+      bufferPersonalTp < 0 ||
+      bufferPersonalSl < 0
+    ) {
+      setSubmitError("Buffers cannot be negative");
       return;
     }
 
-    // Create updates object
-    const updates = {
+    onSave(plan.id, {
       propTpUsd,
       propSlUsd,
       propContracts,
       personalTargetProfit,
-      buffer,
+      buffer: bufferPropSl,
+      bufferPropSl,
+      bufferPropTp,
+      bufferPersonalTp,
+      bufferPersonalSl,
       expectedPayout,
       updatedAt: new Date().toISOString(),
-    };
-
-    onSave(plan.id, updates);
+    });
     onOpenChange(false);
   };
 
@@ -115,15 +131,19 @@ export function EditPlanDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Plan - Phase #{plan.phaseNumber}</DialogTitle>
+          <DialogDescription>
+            Update prop and hedge sizing. Results are recalculated when you execute the plan.
+          </DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-4 py-4">
-          {/* Prop Side */}
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-blue-600">Prop Account</h4>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <Label htmlFor="edit-tp" className="text-xs">TP USD</Label>
+                <Label htmlFor="edit-tp" className="text-xs">
+                  TP USD
+                </Label>
                 <Input
                   id="edit-tp"
                   type="number"
@@ -133,7 +153,9 @@ export function EditPlanDialog({
                 />
               </div>
               <div>
-                <Label htmlFor="edit-sl" className="text-xs">SL USD</Label>
+                <Label htmlFor="edit-sl" className="text-xs">
+                  SL USD
+                </Label>
                 <Input
                   id="edit-sl"
                   type="number"
@@ -143,7 +165,9 @@ export function EditPlanDialog({
                 />
               </div>
               <div>
-                <Label htmlFor="edit-contracts" className="text-xs">Contracts</Label>
+                <Label htmlFor="edit-contracts" className="text-xs">
+                  Contracts
+                </Label>
                 <Input
                   id="edit-contracts"
                   type="number"
@@ -155,37 +179,80 @@ export function EditPlanDialog({
             </div>
           </div>
 
-          {/* Personal Side */}
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-green-600">Personal Hedge</h4>
+            <div>
+              <Label htmlFor="edit-target" className="text-xs">
+                Target USD
+              </Label>
+              <Input
+                id="edit-target"
+                type="number"
+                value={formData.personalTargetProfit}
+                onChange={(e) => updateField("personalTargetProfit", e.target.value)}
+                className="font-mono"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="edit-target" className="text-xs">Target USD</Label>
+                <Label htmlFor="edit-buffer-prop-sl" className="text-xs">
+                  Prop SL → personal TP
+                </Label>
                 <Input
-                  id="edit-target"
+                  id="edit-buffer-prop-sl"
                   type="number"
-                  value={formData.personalTargetProfit}
-                  onChange={(e) => updateField("personalTargetProfit", e.target.value)}
+                  step="0.1"
+                  value={formData.bufferPropSl}
+                  onChange={(e) => updateField("bufferPropSl", e.target.value)}
                   className="font-mono"
                 />
               </div>
               <div>
-                <Label htmlFor="edit-buffer" className="text-xs">Buffer</Label>
+                <Label htmlFor="edit-buffer-prop-tp" className="text-xs">
+                  Prop TP → personal SL
+                </Label>
                 <Input
-                  id="edit-buffer"
+                  id="edit-buffer-prop-tp"
                   type="number"
                   step="0.1"
-                  value={formData.buffer}
-                  onChange={(e) => updateField("buffer", e.target.value)}
+                  value={formData.bufferPropTp}
+                  onChange={(e) => updateField("bufferPropTp", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-buffer-personal-tp" className="text-xs">
+                  Personal TP offset
+                </Label>
+                <Input
+                  id="edit-buffer-personal-tp"
+                  type="number"
+                  step="0.1"
+                  value={formData.bufferPersonalTp}
+                  onChange={(e) => updateField("bufferPersonalTp", e.target.value)}
+                  className="font-mono"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-buffer-personal-sl" className="text-xs">
+                  Personal SL offset
+                </Label>
+                <Input
+                  id="edit-buffer-personal-sl"
+                  type="number"
+                  step="0.1"
+                  value={formData.bufferPersonalSl}
+                  onChange={(e) => updateField("bufferPersonalSl", e.target.value)}
                   className="font-mono"
                 />
               </div>
             </div>
           </div>
 
-          {/* Expected Payout */}
           <div>
-            <Label htmlFor="edit-payout" className="text-xs">Expected Payout USD</Label>
+            <Label htmlFor="edit-payout" className="text-xs">
+              Expected Payout USD
+            </Label>
             <Input
               id="edit-payout"
               type="number"
@@ -195,20 +262,16 @@ export function EditPlanDialog({
             />
           </div>
 
-          {submitError && (
-            <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
-              {submitError}
-            </div>
-          )}
+          {submitError ? (
+            <div className="rounded bg-red-50 p-2 text-sm text-red-600">{submitError}</div>
+          ) : null}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>
-            Save Changes
-          </Button>
+          <Button onClick={handleSave}>Save Changes</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

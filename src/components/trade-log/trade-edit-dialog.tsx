@@ -23,7 +23,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { formatMoney } from "@/models/trade-log/format";
+import {
+  dateFromCreatedAt,
+  formatMoney,
+  ymdToIsoPreserveTime,
+} from "@/models/trade-log/format";
 import { displayPnl } from "@/models/trade-log/pnl";
 import { useTradingStore } from "@/models/trade-log/store";
 import type { LogTrade, TradeDirection } from "@/models/trade-log/types";
@@ -137,6 +141,9 @@ function TradeEditInner({
     trade ? String(trade.fees) : "0"
   );
   const [notes, setNotes] = useState(() => trade?.notes ?? "");
+  const [tradeDateStr, setTradeDateStr] = useState(() =>
+    trade?.createdAt ? dateFromCreatedAt(trade.createdAt) : ""
+  );
   const [error, setError] = useState<string | null>(null);
 
   const previewPnl = useMemo(() => {
@@ -193,6 +200,9 @@ function TradeEditInner({
         exitVal != null || directVal != null ? null : numOrEmpty(currentPrice),
       fees: num(fees, 0),
       notes: notes.trim(),
+      createdAt: tradeDateStr.trim()
+        ? ymdToIsoPreserveTime(tradeDateStr.trim(), trade.createdAt)
+        : trade.createdAt,
     });
     onOpenChange(false);
   }
@@ -376,6 +386,16 @@ function TradeEditInner({
 
               <FormSection title="Other">
                 <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-trade-date">Trade date</Label>
+                    <Input
+                      id="edit-trade-date"
+                      type="date"
+                      value={tradeDateStr}
+                      disabled={readOnly}
+                      onChange={(e) => setTradeDateStr(e.target.value)}
+                    />
+                  </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-trade-fees">Fees</Label>
                     <Input

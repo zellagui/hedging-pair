@@ -14,6 +14,7 @@ import { getPairsByChallengeId } from "@/models/trade-log/challenges";
 import { 
   computeHedgeResults,
   computeFundedPropSlUsd,
+  maxBufferForPropSlPoints,
   validateHedgePlanInput,
   type HedgePlanInput,
   type HedgePlanResult,
@@ -85,7 +86,10 @@ export function ChallengePhasePlanner({
     propSlUsd: "",
     propContracts: "2",
     personalTargetProfit: String(challenge.fee),
-    buffer: "0.5",
+    bufferPropSl: "1.5",
+    bufferPropTp: "1.5",
+    bufferPersonalTp: "0",
+    bufferPersonalSl: "0",
   });
 
   const LOT_STEP = 0.1;
@@ -96,8 +100,7 @@ export function ChallengePhasePlanner({
     [challenge.id, trades, pairs]
   );
 
-  // Convert to HedgePlanInput with USD-based inputs
-  const hedgeInput = useMemo((): HedgePlanInput | null => {
+  const buildHedgeInputPartial = useMemo(() => {
     const propTpUsd = qNum(inputs.propTpUsd);
     const propSlFromInput = qNum(inputs.propSlUsd);
     const propSlUsd =
@@ -105,51 +108,45 @@ export function ChallengePhasePlanner({
         ? fundedSlCalc.propSlUsd
         : propSlFromInput;
     const contracts = qNum(inputs.propContracts) || 2;
-    const personalTargetProfit = qNum(inputs.personalTargetProfit) ?? Math.max(challenge.fee, 1);
-    
+    const personalTargetProfit =
+      qNum(inputs.personalTargetProfit) ?? Math.max(challenge.fee, 1);
+    const bufferPropSl = qNum(inputs.bufferPropSl) ?? 0.5;
+    const bufferPropTp = qNum(inputs.bufferPropTp) ?? 0.5;
+    const bufferPersonalTp = qNum(inputs.bufferPersonalTp) ?? 0;
+    const bufferPersonalSl = qNum(inputs.bufferPersonalSl) ?? 0;
+
     if (propTpUsd === undefined || propSlUsd === undefined) return null;
     if (propTpUsd <= 0 || propSlUsd <= 0) return null;
-    
-    const input: HedgePlanInput = {
-      propTpUsd: propTpUsd,
-      propSlUsd: propSlUsd,
+
+    return {
+      propTpUsd,
+      propSlUsd,
       propContracts: contracts,
-      personalTargetProfit: personalTargetProfit,
-      personalPointValue: 1, // Fixed
-      buffer: qNum(inputs.buffer) || 0.5,
-      lotStep: LOT_STEP,
-      minLot: MIN_LOT,
-      challengeFee: challenge.fee,
-      expectedPayout: 1800 // Fixed default
-    };
-
-    const validation = validateHedgePlanInput(input);
-    return validation.isValid ? input : null;
-  }, [inputs, challenge.fee, fundedSlOpen, fundedSlCalc]);
-
-  const validationErrors = useMemo(() => {
-    const propTpUsd = qNum(inputs.propTpUsd);
-    const propSlFromInput = qNum(inputs.propSlUsd);
-    const propSlUsd =
-      fundedSlOpen && fundedSlCalc && fundedSlCalc.propSlUsd > 0
-        ? fundedSlCalc.propSlUsd
-        : propSlFromInput;
-    if (propTpUsd === undefined || propSlUsd === undefined) return [];
-
-    const input: HedgePlanInput = {
-      propTpUsd: propTpUsd,
-      propSlUsd: propSlUsd,
-      propContracts: qNum(inputs.propContracts) || 2,
-      personalTargetProfit: qNum(inputs.personalTargetProfit) ?? Math.max(challenge.fee, 1),
+      personalTargetProfit,
       personalPointValue: 1,
-      buffer: qNum(inputs.buffer) || 0.5,
+      buffer: bufferPropSl,
+      bufferPropSl,
+      bufferPropTp,
+      bufferPersonalTp,
+      bufferPersonalSl,
       lotStep: LOT_STEP,
       minLot: MIN_LOT,
       challengeFee: challenge.fee,
       expectedPayout: 1800,
-    };
-    return validateHedgePlanInput(input).errors;
+    } satisfies HedgePlanInput;
   }, [inputs, challenge.fee, fundedSlOpen, fundedSlCalc]);
+
+  // Convert to HedgePlanInput with USD-based inputs
+  const hedgeInput = useMemo((): HedgePlanInput | null => {
+    if (!buildHedgeInputPartial) return null;
+    const validation = validateHedgePlanInput(buildHedgeInputPartial);
+    return validation.isValid ? buildHedgeInputPartial : null;
+  }, [buildHedgeInputPartial]);
+
+  const validationErrors = useMemo(() => {
+    if (!buildHedgeInputPartial) return [];
+    return validateHedgePlanInput(buildHedgeInputPartial).errors;
+  }, [buildHedgeInputPartial]);
 
   // Calculate results - this updates immediately when contracts change
   const results = useMemo((): { result: HedgePlanResult | null; error: string | null } => {
@@ -162,13 +159,36 @@ export function ChallengePhasePlanner({
       return { result, error: null };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Calculation failed";
-      console.error("Calculation error:", error);
       return { result: null, error: errorMsg };
     }
   }, [hedgeInput]);
 
   const calculationResult = results.result;
   const calculationError = results.error;
+
+  const maxBufferHint = useMemo(() => {
+    const propSlFromInput = qNum(inputs.propSlUsd);
+    const propSlUsd =
+      fundedSlOpen && fundedSlCalc && fundedSlCalc.propSlUsd > 0
+        ? fundedSlCalc.propSlUsd
+        : propSlFromInput;
+    const contracts = qNum(inputs.propContracts) || 2;
+    if (propSlUsd === undefined || propSlUsd <= 0 || contracts <= 0) return null;
+
+    const propSlPoints = propSlUsd / (contracts * 20);
+    const maxBuffer = maxBufferForPropSlPoints(propSlPoints);
+    return { propSlPoints, maxBuffer };
+  }, [inputs.propSlUsd, inputs.propContracts, fundedSlOpen, fundedSlCalc]);
+
+  const bufferWasClamped =
+    calculationResult != null &&
+    hedgeInput != null &&
+    Math.abs(
+      hedgeInput.bufferPropSl +
+        hedgeInput.bufferPersonalTp -
+        (calculationResult.effectiveBuffers.bufferPropSl +
+          calculationResult.effectiveBuffers.bufferPersonalTp)
+    ) > 1e-9;
 
   const updateInput = (field: string, value: string) => {
     setInputs(prev => ({ ...prev, [field]: value }));
@@ -187,7 +207,11 @@ export function ChallengePhasePlanner({
         propContracts: hedgeInput.propContracts,
         personalTargetProfit: hedgeInput.personalTargetProfit,
         personalPointValue: hedgeInput.personalPointValue,
-        buffer: hedgeInput.buffer,
+        buffer: hedgeInput.bufferPropSl,
+        bufferPropSl: hedgeInput.bufferPropSl,
+        bufferPropTp: hedgeInput.bufferPropTp,
+        bufferPersonalTp: hedgeInput.bufferPersonalTp,
+        bufferPersonalSl: hedgeInput.bufferPersonalSl,
         lotStep: hedgeInput.lotStep,
         minLot: hedgeInput.minLot,
         roundMode: "up" as const,
@@ -243,7 +267,7 @@ export function ChallengePhasePlanner({
       personalTpPoints: calculationResult.personalTpPoints,
       personalSlPoints: calculationResult.personalSlPoints,
       hedgeTarget: hedgeInput.personalTargetProfit,
-      buffer: hedgeInput.buffer,
+      buffer: hedgeInput.bufferPropSl,
       personalLossUsd: personalLossUsd,
       hedgePlanId: null, // Live planner - no saved plan ID
     };
@@ -366,27 +390,79 @@ export function ChallengePhasePlanner({
               />
             </div>
             
-            {/* Buffer (less prominent) */}
-            <div>
-              <Label htmlFor="buffer" className="text-xs font-medium text-muted-foreground">
-                Buffer
-                {calculationError && calculationError.includes("Buffer") && (
-                  <span className="ml-1 text-red-500">⚠</span>
-                )}
-              </Label>
-              <Input
-                id="buffer"
-                type="number"
-                value={inputs.buffer}
-                onChange={(e) => updateInput("buffer", e.target.value)}
-                placeholder="0.5"
-                className={`font-mono w-24 ${calculationError && calculationError.includes("Buffer") ? "border-red-300" : ""}`}
-              />
-              {calculationError && calculationError.includes("Buffer") && (
-                <div className="text-xs text-red-600 mt-1">
-                  Try a smaller buffer value
+            {/* Buffers — prop SL↔personal TP and prop TP↔personal SL */}
+            <div className="space-y-3 rounded-lg border border-border/60 p-3">
+              <div className="text-xs font-medium text-muted-foreground">Buffers (points)</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-blue-600">Prop account</div>
+                  <div>
+                    <Label htmlFor="bufferPropSl" className="text-xs">SL → personal TP</Label>
+                    <Input
+                      id="bufferPropSl"
+                      type="number"
+                      step="0.1"
+                      value={inputs.bufferPropSl}
+                      onChange={(e) => updateInput("bufferPropSl", e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="bufferPropTp" className="text-xs">TP → personal SL</Label>
+                    <Input
+                      id="bufferPropTp"
+                      type="number"
+                      step="0.1"
+                      value={inputs.bufferPropTp}
+                      onChange={(e) => updateInput("bufferPropTp", e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
                 </div>
-              )}
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-green-600">Personal hedge</div>
+                  <div>
+                    <Label htmlFor="bufferPersonalTp" className="text-xs">TP offset</Label>
+                    <Input
+                      id="bufferPersonalTp"
+                      type="number"
+                      step="0.1"
+                      value={inputs.bufferPersonalTp}
+                      onChange={(e) => updateInput("bufferPersonalTp", e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="bufferPersonalSl" className="text-xs">SL offset</Label>
+                    <Input
+                      id="bufferPersonalSl"
+                      type="number"
+                      step="0.1"
+                      value={inputs.bufferPersonalSl}
+                      onChange={(e) => updateInput("bufferPersonalSl", e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+              {maxBufferHint && maxBufferHint.maxBuffer > 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  Max combined TP-side gap: {maxBufferHint.maxBuffer.toFixed(1)} pts (prop SL + personal TP buffers)
+                </div>
+              ) : null}
+              {bufferWasClamped && calculationResult ? (
+                <div className="text-xs text-amber-700">
+                  TP-side buffers scaled to fit prop SL (total{" "}
+                  {(
+                    calculationResult.effectiveBuffers.bufferPropSl +
+                    calculationResult.effectiveBuffers.bufferPersonalTp
+                  ).toFixed(1)}{" "}
+                  pts)
+                </div>
+              ) : null}
+              {calculationError ? (
+                <div className="text-xs text-red-600">{calculationError}</div>
+              ) : null}
             </div>
 
             <div className="text-xs text-muted-foreground">

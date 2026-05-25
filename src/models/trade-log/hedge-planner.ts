@@ -5,7 +5,7 @@
  * Uses USD-based prop inputs with contract multiplier for consistent calculations.
  */
 
-import type { TradeDirection } from "./types";
+import type { PhasePlan, TradeDirection } from "./types";
 
 // =============================================================================
 // CONSTANTS
@@ -13,6 +13,9 @@ import type { TradeDirection } from "./types";
 
 /** Each contract is worth $20 per point */
 const USD_PER_POINT_PER_CONTRACT = 20;
+
+/** Minimum personal TP in points after buffer is applied */
+const MIN_PERSONAL_TP_POINTS = 0.1;
 
 // =============================================================================
 // UNIFIED TYPES
@@ -22,6 +25,32 @@ const USD_PER_POINT_PER_CONTRACT = 20;
  * Unified input type for hedge calculations.
  * Uses USD-based prop inputs for consistent contract calculations.
  */
+export type HedgeBuffers = {
+  bufferPropSl: number;
+  bufferPropTp: number;
+  bufferPersonalTp: number;
+  bufferPersonalSl: number;
+};
+
+/**
+ * Resolve buffer fields from plan/input, migrating legacy single `buffer`.
+ */
+export function resolveHedgeBuffers(source: {
+  buffer?: number;
+  bufferPropSl?: number;
+  bufferPropTp?: number;
+  bufferPersonalTp?: number;
+  bufferPersonalSl?: number;
+}): HedgeBuffers {
+  const legacy = source.buffer ?? 0.5;
+  return {
+    bufferPropSl: source.bufferPropSl ?? legacy,
+    bufferPropTp: source.bufferPropTp ?? legacy,
+    bufferPersonalTp: source.bufferPersonalTp ?? 0,
+    bufferPersonalSl: source.bufferPersonalSl ?? 0,
+  };
+}
+
 export type HedgePlanInput = {
   // Prop trade - USD based
   propTpUsd: number;
@@ -31,7 +60,12 @@ export type HedgePlanInput = {
   // Personal hedge
   personalTargetProfit: number;
   personalPointValue: number;
-  buffer: number;
+  /** @deprecated use buffer fields — kept for callers passing legacy shape */
+  buffer?: number;
+  bufferPropSl: number;
+  bufferPropTp: number;
+  bufferPersonalTp: number;
+  bufferPersonalSl: number;
   lotStep: number;
   minLot: number;
   
@@ -57,8 +91,8 @@ export type HedgePlanResult = {
   personalSlPoints: number;
   rawLots: number;
   roundedLots: number;
-  
-  // Scenarios
+  /** Buffers actually used after clamping (tp-side total may be reduced) */
+  effectiveBuffers: HedgeBuffers;
   failScenario: { hedgeProfitAfterFee: number };
   passScenario: { downBeforePayout: number; netAfterPayout: number };
   breakevenPointsAtCurrentSize: number;
@@ -140,8 +174,14 @@ export function validateHedgePlanInput(input: HedgePlanInput): ValidationResult 
     errors.push("Personal point value must be positive");
   }
 
-  if (input.buffer < 0) {
-    errors.push("Buffer cannot be negative");
+  const buffers = resolveHedgeBuffers(input);
+  if (
+    buffers.bufferPropSl < 0 ||
+    buffers.bufferPropTp < 0 ||
+    buffers.bufferPersonalTp < 0 ||
+    buffers.bufferPersonalSl < 0
+  ) {
+    errors.push("Buffers cannot be negative");
   }
 
   if (!input.lotStep || input.lotStep <= 0) {
@@ -197,6 +237,10 @@ export function calculatePropSide(input: HedgePlanInput): {
   };
 }
 
+export function maxBufferForPropSlPoints(propSlPoints: number): number {
+  return Math.max(0, propSlPoints - MIN_PERSONAL_TP_POINTS);
+}
+
 export function calculatePersonalSide(
   input: HedgePlanInput,
   propSide: ReturnType<typeof calculatePropSide>
@@ -206,22 +250,38 @@ export function calculatePersonalSide(
   personalSlPoints: number;
   rawLots: number;
   roundedLots: number;
+  effectiveBuffers: HedgeBuffers;
 } {
   // Personal direction is always opposite
   const personalDirection: TradeDirection = propSide.propDirection === "long" ? "short" : "long";
 
-  // Personal TP/SL from prop levels with buffer (default 1.5 pts)
-  const personalTpPoints = propSide.propSlPoints - input.buffer;
-  const personalSlPoints = propSide.propTpPoints + input.buffer;
+  const buffers = resolveHedgeBuffers(input);
+  const maxTpGap = maxBufferForPropSlPoints(propSide.propSlPoints);
+  const requestedTpGap = buffers.bufferPropSl + buffers.bufferPersonalTp;
 
-  // Validate that personal points are positive
-  if (personalSlPoints <= 0 || personalTpPoints <= 0) {
-    // Provide more helpful error message with suggested fixes
-    const minBufferForTp = propSide.propSlPoints - 0.1; // Leave at least 0.1 pts
-    const suggestedBuffer = Math.min(input.buffer, minBufferForTp);
+  if (maxTpGap <= 0) {
     throw new Error(
-      `Buffer ${input.buffer} too large. Prop SL=${propSide.propSlPoints} pts would result in personal TP=${personalTpPoints} pts. ` +
-      `Try buffer ≤ ${minBufferForTp.toFixed(1)} pts or increase prop SL USD.`
+      `Prop SL is only ${propSide.propSlPoints.toFixed(2)} pts — too small for buffers. ` +
+        `Increase prop SL USD or use fewer contracts.`
+    );
+  }
+
+  if (requestedTpGap > maxTpGap + 1e-9) {
+    // Scale prop/personal TP buffers proportionally to fit prop SL
+    const scale = maxTpGap / requestedTpGap;
+    buffers.bufferPropSl *= scale;
+    buffers.bufferPersonalTp *= scale;
+  }
+
+  const personalTpPoints =
+    propSide.propSlPoints - buffers.bufferPropSl - buffers.bufferPersonalTp;
+  const personalSlPoints =
+    propSide.propTpPoints + buffers.bufferPropTp + buffers.bufferPersonalSl;
+
+  if (personalSlPoints <= 0 || personalTpPoints <= 0) {
+    throw new Error(
+      `Invalid hedge levels: personal TP=${personalTpPoints.toFixed(2)} pts, SL=${personalSlPoints.toFixed(2)} pts. ` +
+        `Reduce buffers or increase prop SL/TP USD.`
     );
   }
 
@@ -239,7 +299,8 @@ export function calculatePersonalSide(
     personalTpPoints,
     personalSlPoints,
     rawLots,
-    roundedLots
+    roundedLots,
+    effectiveBuffers: buffers,
   };
 }
 
@@ -292,9 +353,9 @@ export function generateExplanations(
     
     personalDirection: `${personalSide.personalDirection.toUpperCase()} (opposite of prop ${propSide.propDirection})`,
     
-    personalTpPoints: `${personalSide.personalTpPoints.toFixed(1)} points (prop SL ${propSide.propSlPoints.toFixed(1)} - ${input.buffer} buffer)`,
+    personalTpPoints: `${personalSide.personalTpPoints.toFixed(1)} points (prop SL ${propSide.propSlPoints.toFixed(1)} − prop ${personalSide.effectiveBuffers.bufferPropSl.toFixed(1)} − personal ${personalSide.effectiveBuffers.bufferPersonalTp.toFixed(1)})`,
     
-    personalSlPoints: `${personalSide.personalSlPoints.toFixed(1)} points (prop TP ${propSide.propTpPoints.toFixed(1)} + ${input.buffer} buffer)`,
+    personalSlPoints: `${personalSide.personalSlPoints.toFixed(1)} points (prop TP ${propSide.propTpPoints.toFixed(1)} + prop ${personalSide.effectiveBuffers.bufferPropTp.toFixed(1)} + personal ${personalSide.effectiveBuffers.bufferPersonalSl.toFixed(1)})`,
     
     rawLots: `${personalSide.rawLots.toFixed(3)} lots (target $${input.personalTargetProfit} ÷ (${personalSide.personalTpPoints.toFixed(1)} points × $${input.personalPointValue}/point/lot))`,
     
@@ -310,9 +371,40 @@ export function generateExplanations(
   };
 }
 
-// =============================================================================
-// MAIN CALCULATION FUNCTION
-// =============================================================================
+export function planToHedgeInput(
+  plan: Pick<
+    PhasePlan,
+    | "propTpUsd"
+    | "propSlUsd"
+    | "propContracts"
+    | "personalTargetProfit"
+    | "personalPointValue"
+    | "buffer"
+    | "bufferPropSl"
+    | "bufferPropTp"
+    | "bufferPersonalTp"
+    | "bufferPersonalSl"
+    | "lotStep"
+    | "minLot"
+    | "expectedPayout"
+  >,
+  challengeFee: number
+): HedgePlanInput {
+  const buffers = resolveHedgeBuffers(plan);
+  return {
+    propTpUsd: plan.propTpUsd,
+    propSlUsd: plan.propSlUsd,
+    propContracts: plan.propContracts,
+    personalTargetProfit: plan.personalTargetProfit,
+    personalPointValue: plan.personalPointValue,
+    buffer: plan.buffer,
+    ...buffers,
+    lotStep: plan.lotStep,
+    minLot: plan.minLot,
+    challengeFee,
+    expectedPayout: plan.expectedPayout,
+  };
+}
 
 /**
  * Main calculation function that orchestrates all hedge calculations.

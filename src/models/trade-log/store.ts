@@ -143,11 +143,13 @@ export type TradeLogState = {
   closeSession: (id: string) => void;
 
   addChallenge: (
-    input: Omit<Challenge, "id" | "createdAt" | "updatedAt">
+    input: Omit<Challenge, "id" | "createdAt" | "updatedAt"> & {
+      createdAt?: string;
+    }
   ) => string | null;
   updateChallenge: (
     id: string,
-    patch: Partial<Omit<Challenge, "id" | "createdAt">>
+    patch: Partial<Omit<Challenge, "id">>
   ) => void;
   deleteChallenge: (id: string) => boolean;
   /** Removes challenge and all its prop/personal trades and hedge pairs. */
@@ -294,18 +296,23 @@ export const useTradingStore = create<TradeLogState>()(
         }
         const id = newId();
         const iso = nowIso();
+        const createdAt =
+          typeof input.createdAt === "string" && input.createdAt.trim() !== ""
+            ? input.createdAt.trim()
+            : iso;
+        const { createdAt: _ignoredCreatedAt, ...challengeInput } = input;
         set((s) => {
-          let name = input.name?.trim() ?? "";
+          let name = challengeInput.name?.trim() ?? "";
           if (!name) {
             const idx = s.challenges.length + 1;
             name = `#${String(idx).padStart(4, "0")}`;
           }
           const challenges: Challenge[] = [
             {
-              ...input,
+              ...challengeInput,
               name,
               id,
-              createdAt: iso,
+              createdAt,
               updatedAt: iso,
             },
             ...s.challenges,

@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { formatMoney } from "@/models/trade-log/format";
 import { 
   computeHedgeResults, 
-  type HedgePlanInput,
+  planToHedgeInput,
   type HedgePlanResult 
 } from "@/models/trade-log/hedge-planner";
 import type { PhasePlan } from "@/models/trade-log/types";
@@ -59,25 +59,12 @@ export function PhasePlanCard({
     if (!challenge) return null;
     
     try {
-      const hedgeInput: HedgePlanInput = {
-        propTpUsd: plan.propTpUsd,
-        propSlUsd: plan.propSlUsd,
-        propContracts: plan.propContracts,
-        personalTargetProfit: plan.personalTargetProfit,
-        personalPointValue: plan.personalPointValue,
-        buffer: plan.buffer,
-        lotStep: plan.lotStep,
-        minLot: plan.minLot,
-        challengeFee: challenge.fee,
-        expectedPayout: plan.expectedPayout
-      };
-      
+      const hedgeInput = planToHedgeInput(plan, challenge.fee);
       return computeHedgeResults(hedgeInput);
-    } catch (error) {
-      console.error("Error calculating plan results:", error);
+    } catch {
       return null;
     }
-  }, [plan, challenge?.fee]);
+  }, [plan, challenge]);
 
   return (
     <Card className="border-border/50">

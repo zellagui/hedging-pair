@@ -1,9 +1,8 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { AddHedgePairDialog } from "@/components/trade-log/add-hedge-pair-dialog";
@@ -12,6 +11,8 @@ import { ChallengeHedgePairsTable } from "@/components/trade-log/challenge-hedge
 import { ChallengePhasePlanner } from "@/components/trade-log/challenge-phase-planner";
 import { PhasePlanCard } from "@/components/trade-log/phase-plan-card";
 import { EditPlanDialog } from "@/components/trade-log/edit-plan-dialog";
+import { ChallengeEvalReference } from "@/components/trade-log/challenge-eval-reference";
+import { ChallengeKpiStrip } from "@/components/trade-log/challenge-kpi-strip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,134 +23,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  CHALLENGE_STATUS_TRANSITIONS,
+  ALL_CHALLENGE_STATUSES,
   challengeAcceptsNewPropTrades,
   challengeStatusLabel,
-  countOpenLegsForChallenge,
-  estimatePersonalNotionalForChallenge,
   getChallengeDashboardMetrics,
   getPairsByChallengeId,
 } from "@/models/trade-log/challenges";
-import { formatMoney, formatShortMonthDay, localTodayYmd } from "@/models/trade-log/format";
-import { computeHedgeResults } from "@/models/trade-log/hedge-planner";
+import { formatMoney, localTodayYmd } from "@/models/trade-log/format";
+import { computeHedgeResults, planToHedgeInput } from "@/models/trade-log/hedge-planner";
 import { useTradingStore } from "@/models/trade-log/store";
-import type { Challenge, ChallengeStatus, PhasePlan } from "@/models/trade-log/types";
+import type { ChallengeStatus, PhasePlan } from "@/models/trade-log/types";
 import { cn } from "@/lib/utils";
 
-const QUICK_STATUS_ORDER: ChallengeStatus[] = [
-  "passed",
-  "funded",
-  "failed",
-  "archived",
-  "paid_out",
-];
-
-function quickStatusRank(s: ChallengeStatus): number {
-  if (s === "evaluation") return -1;
-  const i = QUICK_STATUS_ORDER.indexOf(s);
-  return i >= 0 ? i : 99;
-}
-
-function nextQuickStatuses(current: ChallengeStatus): ChallengeStatus[] {
-  const raw = CHALLENGE_STATUS_TRANSITIONS[current].filter((s) => s !== current);
-  const skipPaidOut = current === "funded" || current === "passed";
-  const filtered = raw.filter((s) => !(skipPaidOut && s === "paid_out"));
-  return [...filtered].sort(
-    (a, b) => quickStatusRank(a) - quickStatusRank(b)
-  );
-}
-
-function quickStatusShortLabel(s: ChallengeStatus): string {
-  switch (s) {
-    case "evaluation":
-      return "Evaluation";
-    case "passed":
-      return "Passed";
-    case "funded":
-      return "Funded";
-    case "failed":
-      return "Failed";
-    case "archived":
-      return "Archive";
-    default:
-      return challengeStatusLabel(s);
-  }
-}
-
-function statusBadgeSpec(challenge: Challenge) {
-  const label =
-    challenge.status === "paid_out"
-      ? "Paid out"
-      : challengeStatusLabel(challenge.status);
-  const { status } = challenge;
-  const emoji =
-    status === "evaluation"
-      ? "🔵"
-      : status === "funded"
-        ? "🟢"
-        : status === "passed"
-          ? "🟢"
-          : status === "failed"
-            ? "🔴"
-            : status === "paid_out"
-              ? "💜"
-              : status === "archived"
-                ? "🗄"
-                : "⚪";
-
-  const cls = cn(
-    "border-0 font-medium shadow-none",
+function statusSelectClass(status: ChallengeStatus): string {
+  return cn(
+    "h-7 rounded-md border px-2 text-xs font-medium shadow-none focus-visible:ring-1",
     status === "evaluation" &&
-      "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
+      "border-blue-200 bg-blue-100 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200",
     status === "funded" &&
-      "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-200",
+      "border-green-200 bg-green-100 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200",
     status === "passed" &&
-      "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-200",
+      "border-teal-200 bg-teal-100 text-teal-800 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-200",
     status === "failed" &&
-      "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200",
+      "border-red-200 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200",
     status === "paid_out" &&
-      "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200",
-    status === "archived" &&
-      "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-  );
-
-  return (
-    <Badge className={cls}>
-      <span className="inline-flex items-center gap-1.5">
-        <span aria-hidden>{emoji}</span>
-        <span>{label}</span>
-      </span>
-    </Badge>
-  );
-}
-
-function DetailKpi({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div
-      className="rounded-lg border border-border bg-card px-3 py-2.5 shadow-sm"
-      title={hint}
-    >
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
-        {value}
-      </p>
-    </div>
+      "border-purple-200 bg-purple-100 text-purple-800 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-200"
   );
 }
 
@@ -242,7 +145,6 @@ export function ChallengeDetailClient({
   // Plan editing state
   const [editPlanOpen, setEditPlanOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PhasePlan | null>(null);
-  const statusMenuRef = useRef<HTMLDetailsElement>(null);
 
   const challenge = useMemo(
     () => challenges.find((c) => c.id === challengeId),
@@ -301,29 +203,11 @@ export function ChallengeDetailClient({
 
   const propTradesLocked = !challengeAcceptsNewPropTrades(c);
 
-  const rulesUnset =
-    c.currentProfitTarget <= 0 &&
-    c.maxDrawdown <= 0 &&
-    c.dailyLossCap <= 0;
-
   const deleteChallengeNameOk =
     deleteChallengeConfirm.trim().length > 0 &&
     deleteChallengeConfirm.trim() === c.name.trim();
 
-  const openLegs = countOpenLegsForChallenge(c.id, trades, pairs);
-  const hedgeNotionalEst = estimatePersonalNotionalForChallenge(
-    c.id,
-    trades,
-    pairs
-  );
   const realTotal = dash.personalRealized - c.fee;
-  const personalLive = dash.personalRunning;
-  const personalClosed = dash.personalRealized;
-  const hedgeDiffers =
-    openLegs > 0 &&
-    Math.abs(personalLive - personalClosed) > 0.005;
-  const quickNext = nextQuickStatuses(c.status);
-  const canLogPayout = c.status === "funded" || c.status === "passed";
   const workspaceLabel =
     identities.find((i) => i.id === c.identityId)?.name ?? "Workspace";
 
@@ -332,12 +216,11 @@ export function ChallengeDetailClient({
     return Number.isFinite(n) ? n : fallback;
   }
 
-  function applyQuickStatus(next: ChallengeStatus) {
-    if (next === "failed" || next === "archived") {
+  function applyStatus(next: ChallengeStatus) {
+    if (next === c.status) return;
+    if (next === "failed") {
       const ok = window.confirm(
-        next === "failed"
-          ? "Mark this challenge as failed? This indicates the prop evaluation or account failed."
-          : "Archive this challenge? You can still view it from the list if kept."
+        "Mark this challenge as failed? This indicates the prop evaluation or account failed."
       );
       if (!ok) return;
     }
@@ -514,7 +397,18 @@ export function ChallengeDetailClient({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-lg font-semibold">{c.name}</h1>
-            {statusBadgeSpec(c)}
+            <select
+              value={c.status}
+              onChange={(e) => applyStatus(e.target.value as ChallengeStatus)}
+              className={statusSelectClass(c.status)}
+              aria-label="Challenge status"
+            >
+              {ALL_CHALLENGE_STATUSES.map((st) => (
+                <option key={st} value={st}>
+                  {challengeStatusLabel(st)}
+                </option>
+              ))}
+            </select>
             <span className="text-sm text-muted-foreground">Fee: {formatMoney(c.fee)}</span>
           </div>
           <div className="flex items-center gap-3">
@@ -559,88 +453,18 @@ export function ChallengeDetailClient({
         </div>
       </div>
 
-      {/* KPI Section */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 px-6 py-4">
-        <DetailKpi label="Phases (total)" value={String(challengePairs.length)} />
-        <DetailKpi
-          label="Open legs (live)"
-          value={String(openLegs)}
-          hint="Prop + personal legs not yet closed in the journal."
-        />
-        <DetailKpi
-          label="Est. in hedge"
-          value={formatMoney(hedgeNotionalEst)}
-          hint="Rough |size × entry| on personal legs — display only."
-        />
-        <DetailKpi
-          label="Combined realized"
-          value={formatMoney(dash.combinedRealized)}
-          hint="Closed prop + closed personal legs for this challenge."
-        />
-        <DetailKpi
-          label="Started"
-          value={formatShortMonthDay(c.createdAt)}
-          hint="Challenge created in journal."
-        />
-      </div>
-
-      {/* Zone 2 — Rules strip */}
-      <details className="group rounded-lg border border-border bg-muted/20">
-        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none [&::-webkit-details-marker]:hidden">
-          <span className="inline-flex items-center gap-2">
-            <span aria-hidden>ℹ</span>
-            Firm / eval reference
-            <span className="text-muted-foreground group-open:hidden">▼</span>
-            <span className="hidden text-muted-foreground group-open:inline">▲</span>
-          </span>
-        </summary>
-        <div className="border-t border-border px-4 py-3 text-sm">
-          {rulesUnset ? (
-            <p className="mb-3 text-xs text-muted-foreground">
-              Optional: add evaluation rules in Edit if you want them on record
-              (target, drawdown, daily cap).
-            </p>
-          ) : null}
-          <p className="flex flex-wrap gap-x-4 gap-y-1">
-            <span className="text-red-500">Fee: {formatMoney(-c.fee)}</span>
-            <span>Balance: {formatMoney(c.balance)}</span>
-            <span>Target: {formatMoney(c.currentProfitTarget)}</span>
-          </p>
-          <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-            <span>Max DD: {formatMoney(c.maxDrawdown)}</span>
-            <span>Daily cap: {formatMoney(c.dailyLossCap)}</span>
-          </p>
-          {c.note.trim() ? (
-            <p className="mt-3 text-muted-foreground">
-              <span className="font-medium text-foreground">Note: </span>
-              {c.note.trim()}
-            </p>
-          ) : null}
-        </div>
-      </details>
-
-      {/* Main Planner */}
-      <div className="px-6 py-8">
-        <ChallengePhasePlanner
+      {/* Eval reference + KPI strip */}
+      <div className="space-y-3 px-6 py-4">
+        <ChallengeEvalReference challenge={c} />
+        <ChallengeKpiStrip
           challenge={c}
-          plans={challengePlans}
-          onSavePlan={(planData) => {
-            const planId = addPlan(planData);
-            if (planId) {
-              setFeedback("Plan saved successfully.");
-            }
-          }}
-          onOpenLogDialog={(prefill) => {
-            setPrefillData(prefill);
-            setQuickAddNonce((n) => n + 1);
-            setQuickAddOpen(true);
-          }}
+          trades={trades}
+          pairs={pairs}
         />
       </div>
 
-      {/* Quiet Secondary Content */}
-      <div className="border-t border-border bg-muted/10 px-6 py-6">
-        {/* Saved Plans */}
+      {/* Trade logs + saved plans */}
+      <div className="border-t border-border px-6 py-6">
         {challengePlans.length > 0 && (
           <div className="mb-8">
             <h3 className="text-sm font-medium text-muted-foreground mb-4">Saved Plans</h3>
@@ -669,19 +493,7 @@ export function ChallengeDetailClient({
                       if (!challenge) return;
                       
                       try {
-                        const hedgeInput = {
-                          propTpUsd: plan.propTpUsd,
-                          propSlUsd: plan.propSlUsd,
-                          propContracts: plan.propContracts,
-                          personalTargetProfit: plan.personalTargetProfit,
-                          personalPointValue: plan.personalPointValue,
-                          buffer: plan.buffer,
-                          lotStep: plan.lotStep,
-                          minLot: plan.minLot,
-                          challengeFee: challenge.fee,
-                          expectedPayout: plan.expectedPayout
-                        };
-                        
+                        const hedgeInput = planToHedgeInput(plan, challenge.fee);
                         const results = computeHedgeResults(hedgeInput);
                         
                         // Calculate personal win/loss amounts for context
@@ -717,7 +529,11 @@ export function ChallengeDetailClient({
                           personalTpPoints: results.personalTpPoints,
                           personalSlPoints: results.personalSlPoints,
                           hedgeTarget: plan.personalTargetProfit,
-                          buffer: plan.buffer,
+                          buffer: hedgeInput.bufferPropSl,
+                          bufferPropSl: hedgeInput.bufferPropSl,
+                          bufferPropTp: hedgeInput.bufferPropTp,
+                          bufferPersonalTp: hedgeInput.bufferPersonalTp,
+                          bufferPersonalSl: hedgeInput.bufferPersonalSl,
                           personalLossUsd: personalLossUsd,
                           hedgePlanId: plan.id, // Link to the executed plan
                         });
@@ -741,8 +557,6 @@ export function ChallengeDetailClient({
           </div>
         )}
 
-        
-        {/* Phases Table */}
         <div>
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Phase History</h3>
           <ChallengeHedgePairsTable
@@ -759,6 +573,25 @@ export function ChallengeDetailClient({
             }}
           />
         </div>
+      </div>
+
+      {/* Hedge calculator */}
+      <div className="border-t border-border bg-muted/10 px-6 py-8">
+        <ChallengePhasePlanner
+          challenge={c}
+          plans={challengePlans}
+          onSavePlan={(planData) => {
+            const planId = addPlan(planData);
+            if (planId) {
+              setFeedback("Plan saved successfully.");
+            }
+          }}
+          onOpenLogDialog={(prefill) => {
+            setPrefillData(prefill);
+            setQuickAddNonce((n) => n + 1);
+            setQuickAddOpen(true);
+          }}
+        />
       </div>
     </div>
   );

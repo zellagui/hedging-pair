@@ -24,7 +24,7 @@ export const STORAGE_KEY_PLANS = "plans";
 /** UUID string persisted when Overview scope is chosen. */
 export const STORAGE_KEY_ACTIVE_IDENTITY_ID = "journal-active-identity-id";
 export const TRADE_LOG_ROOT_KEY = "trade-log-root";
-export const STORAGE_VERSION = 12;
+export const STORAGE_VERSION = 14;
 
 export type PersistedTradeLogSlice = {
   sessions: LogSession[];

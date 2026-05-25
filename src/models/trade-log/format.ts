@@ -9,7 +9,36 @@ export function formatMoney(value: number | null | undefined) {
 
 /** YYYY-MM-DD from ISO createdAt */
 export function dateFromCreatedAt(iso: string): string {
+  if (!iso || iso.length < 10) return localTodayYmd();
   return iso.slice(0, 10);
+}
+
+/** Apply YYYY-MM-DD to an ISO timestamp, preserving time-of-day when possible. */
+export function ymdToIsoPreserveTime(ymd: string, existingIso?: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!match) {
+    return existingIso && !Number.isNaN(new Date(existingIso).getTime())
+      ? existingIso
+      : new Date().toISOString();
+  }
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  if (existingIso) {
+    const prev = new Date(existingIso);
+    if (!Number.isNaN(prev.getTime())) {
+      return new Date(
+        y,
+        m - 1,
+        d,
+        prev.getHours(),
+        prev.getMinutes(),
+        prev.getSeconds(),
+        prev.getMilliseconds()
+      ).toISOString();
+    }
+  }
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
 }
 
 /** Local calendar date YYYY-MM-DD (browser timezone). */
