@@ -1,202 +1,142 @@
 "use client";
 
 import { useMemo } from "react";
-
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  calculateDashboardStatistics,
-  calculateGlobalDashboardKpis,
-  calculateWorkspaceBreakdown,
-  formatPercentage,
-  getRecentTrades,
-} from "@/models/trade-log/dashboard-metrics";
 import { localTodayYmd } from "@/models/trade-log/format";
 import type {
   Challenge,
+  HedgePair,
   Identity,
   LogSession,
   LogTrade,
 } from "@/models/trade-log/types";
 import {
-  DashboardKpiCard,
+  calculateOverviewMetrics,
+  formatPercentage,
+  type CanonicalWorkspaceMetrics,
+} from "@/models/trade-log/workspace-metrics";
+import { formatMoney } from "@/models/trade-log/format";
+import {
   DashboardSection,
   DashboardStatCard,
   DashboardStatRow,
 } from "./dashboard-card";
-import { RecentActivity } from "./recent-activity";
 import { WorkspaceBreakdownTable } from "./workspace-breakdown-table";
 
 interface DashboardOverviewProps {
   trades: LogTrade[];
   challenges: Challenge[];
+  pairs: HedgePair[];
   sessions: LogSession[];
   identities: Identity[];
-  activeIdentityId: string | null;
-  onWorkspaceChange: (identityId: string) => void;
+}
+
+function moneyTint(value: number): string {
+  if (value > 0) return "text-emerald-600 dark:text-emerald-400";
+  if (value < 0) return "text-red-600 dark:text-red-400";
+  return "text-muted-foreground";
+}
+
+// Same KPI strip as the Challenges page header — portfolio-wide
+function GlobalSummaryStrip({ metrics }: { metrics: CanonicalWorkspaceMetrics }) {
+  const { challengeListKpis } = metrics;
+  const fundOutflow =
+    challengeListKpis.fundInEval > 0 ? -challengeListKpis.fundInEval : 0;
+
+  return (
+    <div className="flex flex-wrap items-end gap-x-8 gap-y-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium text-muted-foreground">Fund in eval</p>
+        <p className="text-base font-semibold tabular-nums leading-none text-red-600 dark:text-red-400">
+          {formatMoney(fundOutflow)}
+        </p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground/50">Fees + personal on open evals</p>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium text-muted-foreground">Closed profit</p>
+        <p className={`text-base font-semibold tabular-nums leading-none ${moneyTint(challengeListKpis.netRealExclEvaluation)}`}>
+          {formatMoney(challengeListKpis.netRealExclEvaluation)}
+        </p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground/50">Settled, excl. open eval</p>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium text-muted-foreground">Net result</p>
+        <p className={`text-base font-semibold tabular-nums leading-none ${moneyTint(metrics.bookAfterFees)}`}>
+          {formatMoney(metrics.bookAfterFees)}
+        </p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground/50">Closed profit + open eval net</p>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium text-muted-foreground">Active</p>
+        <p className="text-base font-semibold tabular-nums leading-none text-foreground">
+          {challengeListKpis.live}
+        </p>
+        <p className="mt-0.5 text-[10px] text-muted-foreground/50">{challengeListKpis.count} total</p>
+      </div>
+    </div>
+  );
 }
 
 export function DashboardOverview({
   trades,
   challenges,
+  pairs,
   sessions,
   identities,
-  activeIdentityId,
-  onWorkspaceChange,
 }: DashboardOverviewProps) {
-  // Calculate all metrics
-  const globalKpis = useMemo(
-    () => calculateGlobalDashboardKpis(trades, challenges, sessions),
-    [trades, challenges, sessions]
+  // Always use global metrics (all workspaces) for Overview page
+  const canonicalMetrics = useMemo(
+    () => calculateOverviewMetrics(
+      trades,
+      challenges,
+      pairs,
+      sessions,
+      identities
+    ),
+    [trades, challenges, pairs, sessions, identities]
   );
-
-  const statistics = useMemo(
-    () => calculateDashboardStatistics(trades, challenges),
-    [trades, challenges]
-  );
-
-  const workspaceBreakdown = useMemo(
-    () => calculateWorkspaceBreakdown(identities, trades, challenges),
-    [identities, trades, challenges]
-  );
-
-  const recentTrades = useMemo(() => getRecentTrades(trades, 8), [trades]);
-
-  // Format workspace options
-  const sortedIdentities = useMemo(
-    () =>
-      [...identities].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-      ),
-    [identities]
-  );
-
-  const effectiveWorkspaceId =
-    activeIdentityId && identities.some((i) => i.id === activeIdentityId)
-      ? activeIdentityId
-      : identities[0]?.id ?? "";
-
-  const activeWorkspaceName =
-    sortedIdentities.find((i) => i.id === effectiveWorkspaceId)?.name ?? "All Workspaces";
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      {/* Minimal Header */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Real-time trading performance across all accounts and workspaces
+          <p className="text-sm text-muted-foreground">
+            Portfolio overview across all workspaces
           </p>
         </div>
-        
-        <div className="flex flex-col gap-2 sm:items-end">
-          <div className="flex items-center gap-3">
-            <Label htmlFor="workspace-selector" className="text-sm font-medium">
-              Scope
-            </Label>
-            <Select
-              value={effectiveWorkspaceId || undefined}
-              onValueChange={onWorkspaceChange}
-            >
-              <SelectTrigger id="workspace-selector" className="w-[200px]">
-                <SelectValue placeholder="Select workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                {sortedIdentities.map((identity) => (
-                  <SelectItem key={identity.id} value={identity.id}>
-                    {identity.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Last updated: {localTodayYmd()}
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Last updated: {localTodayYmd()}
+        </p>
       </div>
 
-      {/* KPI Cards */}
-      <DashboardSection title="Key Performance Indicators">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <DashboardKpiCard
-            title="Book After Fees"
-            value={globalKpis.bookAfterFees}
-            format="money"
-            subtitle="Net P&L minus challenge fees"
-          />
-          <DashboardKpiCard
-            title="Personal Legs P&L"
-            value={globalKpis.personalLegsTotal}
-            format="money"
-            subtitle="Hedge trades total"
-          />
-          <DashboardKpiCard
-            title="Firm-side P&L"
-            value={globalKpis.firmSideTotal}
-            format="money"
-            subtitle="Prop trades total"
-          />
-          <DashboardKpiCard
-            title="Active Runways"
-            value={globalKpis.activeRunways}
-            format="integer"
-            variant="neutral"
-            subtitle="Evaluation phase challenges"
-          />
-          <DashboardKpiCard
-            title="Failed Challenges"
-            value={globalKpis.failedChallenges}
-            format="integer"
-            variant="neutral"
-            subtitle="Terminated challenges"
-          />
-          <DashboardKpiCard
-            title="Open Sessions Today"
-            value={globalKpis.openSessionsToday}
-            format="integer"
-            variant="neutral"
-            subtitle="Active trading sessions"
-          />
-        </div>
-        
-        {/* Helper breakdown */}
-        <DashboardStatRow
-          stats={[
-            { label: "Gross before fees", value: globalKpis.grossBeforeFees, format: "money" },
-            { label: "Total fees", value: globalKpis.totalFees, format: "money" },
-            { label: "Net after fees", value: globalKpis.bookAfterFees, format: "money" },
-          ]}
-          className="border-t border-border pt-4"
-        />
+      {/* Workspace Breakdown (Full Width) */}
+      <DashboardSection title="Workspace Breakdown">
+        <WorkspaceBreakdownTable workspaces={canonicalMetrics.workspaceBreakdown} />
       </DashboardSection>
 
-      {/* Statistics Section */}
+      {/* Global Summary Strip */}
+      <GlobalSummaryStrip metrics={canonicalMetrics} />
+
+      {/* Statistics Detail Grid */}
       <DashboardSection title="Statistics">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-3">
             <h4 className="text-sm font-medium text-muted-foreground">Challenge Metrics</h4>
             <div className="space-y-2">
               <DashboardStatCard
                 label="Average challenge fee"
-                value={statistics.averageChallengeFee}
+                value={canonicalMetrics.statistics.averageChallengeFee}
                 format="money"
               />
               <DashboardStatCard
                 label="Total challenge fees"
-                value={statistics.totalChallengeFees}
+                value={canonicalMetrics.statistics.totalChallengeFees}
                 format="money"
               />
               <DashboardStatCard
                 label="Avg trades per active challenge"
-                value={statistics.averageTradesPerActiveChallenge}
+                value={canonicalMetrics.statistics.averageTradesPerActiveChallenge}
                 format="integer"
               />
             </div>
@@ -207,17 +147,17 @@ export function DashboardOverview({
             <div className="space-y-2">
               <DashboardStatCard
                 label="Average personal leg P&L"
-                value={statistics.averagePersonalPnl}
+                value={canonicalMetrics.statistics.averagePersonalPnl}
                 format="money"
               />
               <DashboardStatCard
                 label="Average firm leg P&L"
-                value={statistics.averageFirmPnl}
+                value={canonicalMetrics.statistics.averageFirmPnl}
                 format="money"
               />
               <DashboardStatCard
                 label="Average trade overall"
-                value={statistics.averageTradeOverall}
+                value={canonicalMetrics.statistics.averageTradeOverall}
                 format="money"
               />
             </div>
@@ -228,53 +168,38 @@ export function DashboardOverview({
             <div className="space-y-2">
               <DashboardStatCard
                 label="Win rate"
-                value={formatPercentage(statistics.winRate)}
+                value={formatPercentage(canonicalMetrics.statistics.winRate)}
                 format="string"
               />
               <DashboardStatCard
                 label="Positive trades"
-                value={statistics.positiveTradeCount}
+                value={canonicalMetrics.statistics.positiveTradeCount}
                 format="integer"
               />
               <DashboardStatCard
                 label="Negative trades"
-                value={statistics.negativeTradeCount}
+                value={canonicalMetrics.statistics.negativeTradeCount}
                 format="integer"
               />
               <DashboardStatCard
                 label="Flat trades"
-                value={statistics.flatTradeCount}
+                value={canonicalMetrics.statistics.flatTradeCount}
                 format="integer"
               />
             </div>
           </div>
         </div>
 
-        {/* Additional stats row */}
+        {/* Footer stats row */}
         <DashboardStatRow
           stats={[
-            { label: "Avg trades per workspace", value: statistics.averageTradesPerWorkspace, format: "integer" },
-            { label: "Most traded symbol", value: statistics.mostTradedSymbol || "—", format: "string" },
-            { label: "Latest trade", value: statistics.latestTradeTimestamp ? new Date(statistics.latestTradeTimestamp).toLocaleDateString() : "—", format: "string" },
+            { label: "Avg trades per workspace", value: canonicalMetrics.statistics.averageTradesPerWorkspace, format: "integer" },
+            { label: "Most traded symbol", value: canonicalMetrics.statistics.mostTradedSymbol || "—", format: "string" },
+            { label: "Latest trade", value: canonicalMetrics.statistics.latestTradeTimestamp ? new Date(canonicalMetrics.statistics.latestTradeTimestamp).toLocaleDateString() : "—", format: "string" },
           ]}
           className="border-t border-border pt-4"
         />
       </DashboardSection>
-
-      {/* Workspace Breakdown & Recent Activity */}
-      <div className="grid gap-8 lg:grid-cols-7">
-        <div className="lg:col-span-4">
-          <DashboardSection title="Workspace Breakdown">
-            <WorkspaceBreakdownTable workspaces={workspaceBreakdown} />
-          </DashboardSection>
-        </div>
-
-        <div className="lg:col-span-3">
-          <DashboardSection title="Recent Activity">
-            <RecentActivity trades={recentTrades} />
-          </DashboardSection>
-        </div>
-      </div>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -26,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { formatMoney, formatShortMonthDay } from "@/models/trade-log/format";
+import { formatMoney, dateFromCreatedAt, ymdToIsoPreserveTime } from "@/models/trade-log/format";
 import {
   getPairLifecycleStep,
   pairLifecycleStepBadgeText,
@@ -127,6 +128,7 @@ export type ChallengeHedgePairsTableProps = {
   trades: LogTrade[];
   challengeId: string;
   updateTrade: (id: string, patch: Partial<Omit<LogTrade, "id">>) => void;
+  updatePair: (id: string, patch: Partial<Omit<HedgePair, "id">>) => void;
   deleteHedgePairCascade: (pairId: string) => boolean;
   unlinkDisabled?: boolean;
   onRequestLogPhase?: () => void;
@@ -134,11 +136,33 @@ export type ChallengeHedgePairsTableProps = {
 
 type CloseLegTarget = { trade: LogTrade; phase: number };
 
+function PhaseDateInput({
+  iso,
+  disabled,
+  onChange,
+}: {
+  iso: string;
+  disabled?: boolean;
+  onChange: (ymd: string) => void;
+}) {
+  return (
+    <Input
+      type="date"
+      value={dateFromCreatedAt(iso)}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-7 w-[7.5rem] px-1.5 text-xs tabular-nums"
+      aria-label="Phase date"
+    />
+  );
+}
+
 export function ChallengeHedgePairsTable({
   pairs,
   trades,
   challengeId,
   updateTrade,
+  updatePair,
   deleteHedgePairCascade,
   unlinkDisabled,
   onRequestLogPhase,
@@ -294,13 +318,35 @@ export function ChallengeHedgePairsTable({
               const stepText = pairLifecycleStepBadgeText(step);
               const stepIconOnly = stepText.split(/\s/)[0] ?? stepText;
               const phaseN = pair.phaseNumber;
+              const phaseDateIso = propT?.createdAt ?? perT?.createdAt ?? pair.createdAt;
+
+              function handlePhaseDateChange(ymd: string) {
+                if (!ymd.trim()) return;
+                const pairIso = ymdToIsoPreserveTime(ymd, phaseDateIso);
+                updatePair(pair.id, { createdAt: pairIso });
+                if (propT) {
+                  updateTrade(propT.id, {
+                    createdAt: ymdToIsoPreserveTime(ymd, propT.createdAt),
+                  });
+                }
+                if (perT) {
+                  updateTrade(perT.id, {
+                    createdAt: ymdToIsoPreserveTime(ymd, perT.createdAt),
+                  });
+                }
+              }
+
               return (
                 <TableRow key={pair.id} className="hover:bg-muted/30">
                   <TableCell className="align-top py-2 text-xs tabular-nums text-muted-foreground">
                     Phase {phaseN}
                   </TableCell>
-                  <TableCell className="align-top py-2 text-sm tabular-nums text-muted-foreground">
-                    {formatShortMonthDay(pair.createdAt)}
+                  <TableCell className="align-top py-2">
+                    <PhaseDateInput
+                      iso={phaseDateIso}
+                      disabled={unlinkDisabled}
+                      onChange={handlePhaseDateChange}
+                    />
                   </TableCell>
                   <TableCell className="align-top py-2">
                     {propT ? (

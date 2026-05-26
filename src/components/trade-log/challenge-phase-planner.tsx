@@ -14,6 +14,7 @@ import { getPairsByChallengeId } from "@/models/trade-log/challenges";
 import { 
   computeHedgeResults,
   computeFundedPropSlUsd,
+  expandCoupledBuffers,
   maxBufferForPropSlPoints,
   validateHedgePlanInput,
   type HedgePlanInput,
@@ -86,10 +87,8 @@ export function ChallengePhasePlanner({
     propSlUsd: "",
     propContracts: "2",
     personalTargetProfit: String(challenge.fee),
-    bufferPropSl: "1.5",
-    bufferPropTp: "1.5",
-    bufferPersonalTp: "0",
-    bufferPersonalSl: "0",
+    bufferPropSlToPersonalTp: "1.5",
+    bufferPropTpToPersonalSl: "1.5",
   });
 
   const LOT_STEP = 0.1;
@@ -110,10 +109,14 @@ export function ChallengePhasePlanner({
     const contracts = qNum(inputs.propContracts) || 2;
     const personalTargetProfit =
       qNum(inputs.personalTargetProfit) ?? Math.max(challenge.fee, 1);
-    const bufferPropSl = qNum(inputs.bufferPropSl) ?? 0.5;
-    const bufferPropTp = qNum(inputs.bufferPropTp) ?? 0.5;
-    const bufferPersonalTp = qNum(inputs.bufferPersonalTp) ?? 0;
-    const bufferPersonalSl = qNum(inputs.bufferPersonalSl) ?? 0;
+    const propSlToPersonalTp = qNum(inputs.bufferPropSlToPersonalTp) ?? 0.5;
+    const propTpToPersonalSl = qNum(inputs.bufferPropTpToPersonalSl) ?? 0.5;
+    const {
+      bufferPropSl,
+      bufferPropTp,
+      bufferPersonalTp,
+      bufferPersonalSl,
+    } = expandCoupledBuffers(propSlToPersonalTp, propTpToPersonalSl);
 
     if (propTpUsd === undefined || propSlUsd === undefined) return null;
     if (propTpUsd <= 0 || propSlUsd <= 0) return null;
@@ -184,8 +187,7 @@ export function ChallengePhasePlanner({
     calculationResult != null &&
     hedgeInput != null &&
     Math.abs(
-      hedgeInput.bufferPropSl +
-        hedgeInput.bufferPersonalTp -
+      (qNum(inputs.bufferPropSlToPersonalTp) ?? 0) -
         (calculationResult.effectiveBuffers.bufferPropSl +
           calculationResult.effectiveBuffers.bufferPersonalTp)
     ) > 1e-9;
@@ -390,69 +392,45 @@ export function ChallengePhasePlanner({
               />
             </div>
             
-            {/* Buffers — prop SL↔personal TP and prop TP↔personal SL */}
+            {/* Buffers — one control per leg pair */}
             <div className="space-y-3 rounded-lg border border-border/60 p-3">
               <div className="text-xs font-medium text-muted-foreground">Buffers (points)</div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-blue-600">Prop account</div>
-                  <div>
-                    <Label htmlFor="bufferPropSl" className="text-xs">SL → personal TP</Label>
-                    <Input
-                      id="bufferPropSl"
-                      type="number"
-                      step="0.1"
-                      value={inputs.bufferPropSl}
-                      onChange={(e) => updateInput("bufferPropSl", e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="bufferPropTp" className="text-xs">TP → personal SL</Label>
-                    <Input
-                      id="bufferPropTp"
-                      type="number"
-                      step="0.1"
-                      value={inputs.bufferPropTp}
-                      onChange={(e) => updateInput("bufferPropTp", e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
+                <div>
+                  <Label htmlFor="bufferPropSlToPersonalTp" className="text-xs">
+                    Prop SL → personal TP
+                  </Label>
+                  <Input
+                    id="bufferPropSlToPersonalTp"
+                    type="number"
+                    step="0.1"
+                    value={inputs.bufferPropSlToPersonalTp}
+                    onChange={(e) => updateInput("bufferPropSlToPersonalTp", e.target.value)}
+                    className="font-mono"
+                  />
                 </div>
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-green-600">Personal hedge</div>
-                  <div>
-                    <Label htmlFor="bufferPersonalTp" className="text-xs">TP offset</Label>
-                    <Input
-                      id="bufferPersonalTp"
-                      type="number"
-                      step="0.1"
-                      value={inputs.bufferPersonalTp}
-                      onChange={(e) => updateInput("bufferPersonalTp", e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="bufferPersonalSl" className="text-xs">SL offset</Label>
-                    <Input
-                      id="bufferPersonalSl"
-                      type="number"
-                      step="0.1"
-                      value={inputs.bufferPersonalSl}
-                      onChange={(e) => updateInput("bufferPersonalSl", e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
+                <div>
+                  <Label htmlFor="bufferPropTpToPersonalSl" className="text-xs">
+                    Prop TP → personal SL
+                  </Label>
+                  <Input
+                    id="bufferPropTpToPersonalSl"
+                    type="number"
+                    step="0.1"
+                    value={inputs.bufferPropTpToPersonalSl}
+                    onChange={(e) => updateInput("bufferPropTpToPersonalSl", e.target.value)}
+                    className="font-mono"
+                  />
                 </div>
               </div>
               {maxBufferHint && maxBufferHint.maxBuffer > 0 ? (
                 <div className="text-xs text-muted-foreground">
-                  Max combined TP-side gap: {maxBufferHint.maxBuffer.toFixed(1)} pts (prop SL + personal TP buffers)
+                  Max prop SL → personal TP gap: {maxBufferHint.maxBuffer.toFixed(1)} pts
                 </div>
               ) : null}
               {bufferWasClamped && calculationResult ? (
                 <div className="text-xs text-amber-700">
-                  TP-side buffers scaled to fit prop SL (total{" "}
+                  Prop SL → personal TP buffer scaled to fit prop SL (effective{" "}
                   {(
                     calculationResult.effectiveBuffers.bufferPropSl +
                     calculationResult.effectiveBuffers.bufferPersonalTp

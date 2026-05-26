@@ -51,6 +51,43 @@ export function resolveHedgeBuffers(source: {
   };
 }
 
+/** Combined buffer: prop SL gap toward personal TP (prop SL + personal TP offsets). */
+export function coupledBufferPropSlToPersonalTp(source: {
+  buffer?: number;
+  bufferPropSl?: number;
+  bufferPropTp?: number;
+  bufferPersonalTp?: number;
+  bufferPersonalSl?: number;
+}): number {
+  const b = resolveHedgeBuffers(source);
+  return b.bufferPropSl + b.bufferPersonalTp;
+}
+
+/** Combined buffer: prop TP gap toward personal SL (prop TP + personal SL offsets). */
+export function coupledBufferPropTpToPersonalSl(source: {
+  buffer?: number;
+  bufferPropSl?: number;
+  bufferPropTp?: number;
+  bufferPersonalTp?: number;
+  bufferPersonalSl?: number;
+}): number {
+  const b = resolveHedgeBuffers(source);
+  return b.bufferPropTp + b.bufferPersonalSl;
+}
+
+/** Expand the two coupled UI buffers into the four underlying buffer fields. */
+export function expandCoupledBuffers(
+  propSlToPersonalTp: number,
+  propTpToPersonalSl: number
+): HedgeBuffers {
+  return {
+    bufferPropSl: propSlToPersonalTp,
+    bufferPropTp: propTpToPersonalSl,
+    bufferPersonalTp: 0,
+    bufferPersonalSl: 0,
+  };
+}
+
 export type HedgePlanInput = {
   // Prop trade - USD based
   propTpUsd: number;

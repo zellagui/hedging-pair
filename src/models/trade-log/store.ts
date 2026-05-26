@@ -235,14 +235,58 @@ export const useTradingStore = create<TradeLogState>()(
       deleteIdentity(id) {
         const s = get();
         if (s.identities.length <= 1) return false;
-        if (s.challenges.some((c) => c.identityId === id)) return false;
+
+        const challengeIds = new Set(
+          s.challenges.filter((c) => c.identityId === id).map((c) => c.id)
+        );
+
+        const tradeIds = new Set<string>();
+        for (const t of s.trades) {
+          if (t.identityId === id) tradeIds.add(t.id);
+          if (t.challengeId != null && challengeIds.has(t.challengeId)) {
+            tradeIds.add(t.id);
+          }
+        }
+
+        for (const p of s.pairs) {
+          if (tradeIds.has(p.propTradeId) || tradeIds.has(p.personalTradeId)) {
+            tradeIds.add(p.propTradeId);
+            tradeIds.add(p.personalTradeId);
+          }
+        }
+
+        const pairIds = new Set(
+          s.pairs
+            .filter(
+              (p) =>
+                tradeIds.has(p.propTradeId) || tradeIds.has(p.personalTradeId)
+            )
+            .map((p) => p.id)
+        );
+
         const identities = s.identities.filter((x) => x.id !== id);
+        const defaultIdentityId = identities[0]?.id;
+        if (!defaultIdentityId) return false;
+
+        const trades = s.trades.filter((t) => !tradeIds.has(t.id));
+        const pairs = refreshAllPairs(
+          s.pairs.filter((p) => !pairIds.has(p.id)),
+          trades
+        );
+        const challenges = s.challenges.filter((c) => c.identityId !== id);
+        const plans = s.plans.filter((p) => !challengeIds.has(p.challengeId));
+
         let activeIdentityId = s.activeIdentityId;
         if (activeIdentityId === id) {
-          activeIdentityId = identities[0]?.id ?? null;
+          activeIdentityId = defaultIdentityId;
         }
+
         set({
           identities,
+          challenges: reconcileChallengeAutoStatus(challenges, trades, pairs),
+          trades,
+          pairs,
+          plans,
           activeIdentityId,
         });
         return true;

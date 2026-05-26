@@ -67,7 +67,7 @@ function ChallengeNotFound() {
       </CardHeader>
       <CardContent className="flex flex-wrap gap-2">
         <Button asChild variant="default" size="sm">
-          <Link href="/identities">Workspaces</Link>
+          <Link href="/challenges">Challenges</Link>
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href="/challenges">All challenges</Link>
@@ -100,6 +100,7 @@ export function ChallengeDetailClient({
     addTrade,
     linkPair,
     updateTrade,
+    updatePair,
     updateChallenge,
     deleteHedgePairCascade,
     deleteChallengeCascade,
@@ -107,6 +108,7 @@ export function ChallengeDetailClient({
     updatePlan,
     deletePlan,
     linkPlanToHedgePair,
+    setActiveIdentityId,
   } = useTradingStore(
     useShallow((s) => ({
       challenges: s.challenges,
@@ -114,16 +116,18 @@ export function ChallengeDetailClient({
       pairs: s.pairs,
       identities: s.identities,
       plans: s.plans,
-      addTrade: s.addTrade,
-      linkPair: s.linkPair,
-      updateTrade: s.updateTrade,
-      updateChallenge: s.updateChallenge,
-      deleteHedgePairCascade: s.deleteHedgePairCascade,
-      deleteChallengeCascade: s.deleteChallengeCascade,
-      addPlan: s.addPlan,
-      updatePlan: s.updatePlan,
-      deletePlan: s.deletePlan,
-      linkPlanToHedgePair: s.linkPlanToHedgePair,
+    addTrade: s.addTrade,
+    linkPair: s.linkPair,
+    updateTrade: s.updateTrade,
+    updatePair: s.updatePair,
+    updateChallenge: s.updateChallenge,
+    deleteHedgePairCascade: s.deleteHedgePairCascade,
+    deleteChallengeCascade: s.deleteChallengeCascade,
+    addPlan: s.addPlan,
+    updatePlan: s.updatePlan,
+    deletePlan: s.deletePlan,
+    linkPlanToHedgePair: s.linkPlanToHedgePair,
+    setActiveIdentityId: s.setActiveIdentityId,
     }))
   );
 
@@ -150,6 +154,11 @@ export function ChallengeDetailClient({
     () => challenges.find((c) => c.id === challengeId),
     [challenges, challengeId]
   );
+  
+  const handleWorkspaceNavigation = (workspaceId: string) => {
+    setActiveIdentityId(workspaceId);
+    router.push("/challenges");
+  };
 
   const dashboard = useMemo(() => {
     if (!challenge) return null;
@@ -371,26 +380,26 @@ export function ChallengeDetailClient({
           Overview
         </Link>
         <span aria-hidden>·</span>
-        <Link href="/identities" className="hover:text-foreground">
-          Workspaces
+        <Link href="/challenges" className="hover:text-foreground">
+          Challenges
         </Link>
         <span aria-hidden>·</span>
-        <Link
-          href={`/identities/${c.identityId}`}
-          className="truncate hover:text-foreground"
+        <button
+          onClick={() => handleWorkspaceNavigation(c.identityId)}
+          className="truncate hover:text-foreground text-left"
         >
           {workspaceLabel}
-        </Link>
+        </button>
         <span aria-hidden>·</span>
         <span className="truncate text-muted-foreground/80">{c.name}</span>
       </div>
 
-      <Link
-        href={`/identities/${c.identityId}`}
-        className="-mt-2 inline-flex text-xs font-medium text-muted-foreground hover:text-foreground"
+      <button
+        onClick={() => handleWorkspaceNavigation(c.identityId)}
+        className="-mt-2 inline-flex text-xs font-medium text-muted-foreground hover:text-foreground text-left"
       >
         ← {workspaceLabel}
-      </Link>
+      </button>
 
       {/* Compact Sticky Header */}
       <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur px-6 py-3">
@@ -564,6 +573,7 @@ export function ChallengeDetailClient({
             trades={trades}
             challengeId={c.id}
             updateTrade={updateTrade}
+            updatePair={updatePair}
             deleteHedgePairCascade={deleteHedgePairCascade}
             unlinkDisabled={propTradesLocked}
             onRequestLogPhase={() => {

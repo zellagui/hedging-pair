@@ -12,7 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { resolveHedgeBuffers } from "@/models/trade-log/hedge-planner";
+import {
+  coupledBufferPropSlToPersonalTp,
+  coupledBufferPropTpToPersonalSl,
+  expandCoupledBuffers,
+} from "@/models/trade-log/hedge-planner";
 import type { PhasePlan } from "@/models/trade-log/types";
 
 interface EditPlanDialogProps {
@@ -38,10 +42,8 @@ export function EditPlanDialog({
     propSlUsd: "",
     propContracts: "",
     personalTargetProfit: "",
-    bufferPropSl: "",
-    bufferPropTp: "",
-    bufferPersonalTp: "",
-    bufferPersonalSl: "",
+    bufferPropSlToPersonalTp: "",
+    bufferPropTpToPersonalSl: "",
     expectedPayout: "",
   });
 
@@ -49,16 +51,13 @@ export function EditPlanDialog({
 
   useEffect(() => {
     if (plan) {
-      const buffers = resolveHedgeBuffers(plan);
       setFormData({
         propTpUsd: String(plan.propTpUsd),
         propSlUsd: String(plan.propSlUsd),
         propContracts: String(plan.propContracts),
         personalTargetProfit: String(plan.personalTargetProfit),
-        bufferPropSl: String(buffers.bufferPropSl),
-        bufferPropTp: String(buffers.bufferPropTp),
-        bufferPersonalTp: String(buffers.bufferPersonalTp),
-        bufferPersonalSl: String(buffers.bufferPersonalSl),
+        bufferPropSlToPersonalTp: String(coupledBufferPropSlToPersonalTp(plan)),
+        bufferPropTpToPersonalSl: String(coupledBufferPropTpToPersonalSl(plan)),
         expectedPayout: String(plan.expectedPayout),
       });
       setSubmitError(null);
@@ -77,10 +76,8 @@ export function EditPlanDialog({
     const propSlUsd = qNum(formData.propSlUsd);
     const propContracts = qNum(formData.propContracts);
     const personalTargetProfit = qNum(formData.personalTargetProfit);
-    const bufferPropSl = qNum(formData.bufferPropSl);
-    const bufferPropTp = qNum(formData.bufferPropTp);
-    const bufferPersonalTp = qNum(formData.bufferPersonalTp);
-    const bufferPersonalSl = qNum(formData.bufferPersonalSl);
+    const propSlToPersonalTp = qNum(formData.bufferPropSlToPersonalTp);
+    const propTpToPersonalSl = qNum(formData.bufferPropTpToPersonalSl);
     const expectedPayout = qNum(formData.expectedPayout);
 
     if (propTpUsd <= 0 || propSlUsd <= 0) {
@@ -98,15 +95,17 @@ export function EditPlanDialog({
       return;
     }
 
-    if (
-      bufferPropSl < 0 ||
-      bufferPropTp < 0 ||
-      bufferPersonalTp < 0 ||
-      bufferPersonalSl < 0
-    ) {
+    if (propSlToPersonalTp < 0 || propTpToPersonalSl < 0) {
       setSubmitError("Buffers cannot be negative");
       return;
     }
+
+    const {
+      bufferPropSl,
+      bufferPropTp,
+      bufferPersonalTp,
+      bufferPersonalSl,
+    } = expandCoupledBuffers(propSlToPersonalTp, propTpToPersonalSl);
 
     onSave(plan.id, {
       propTpUsd,
@@ -202,8 +201,8 @@ export function EditPlanDialog({
                   id="edit-buffer-prop-sl"
                   type="number"
                   step="0.1"
-                  value={formData.bufferPropSl}
-                  onChange={(e) => updateField("bufferPropSl", e.target.value)}
+                  value={formData.bufferPropSlToPersonalTp}
+                  onChange={(e) => updateField("bufferPropSlToPersonalTp", e.target.value)}
                   className="font-mono"
                 />
               </div>
@@ -215,34 +214,8 @@ export function EditPlanDialog({
                   id="edit-buffer-prop-tp"
                   type="number"
                   step="0.1"
-                  value={formData.bufferPropTp}
-                  onChange={(e) => updateField("bufferPropTp", e.target.value)}
-                  className="font-mono"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-buffer-personal-tp" className="text-xs">
-                  Personal TP offset
-                </Label>
-                <Input
-                  id="edit-buffer-personal-tp"
-                  type="number"
-                  step="0.1"
-                  value={formData.bufferPersonalTp}
-                  onChange={(e) => updateField("bufferPersonalTp", e.target.value)}
-                  className="font-mono"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-buffer-personal-sl" className="text-xs">
-                  Personal SL offset
-                </Label>
-                <Input
-                  id="edit-buffer-personal-sl"
-                  type="number"
-                  step="0.1"
-                  value={formData.bufferPersonalSl}
-                  onChange={(e) => updateField("bufferPersonalSl", e.target.value)}
+                  value={formData.bufferPropTpToPersonalSl}
+                  onChange={(e) => updateField("bufferPropTpToPersonalSl", e.target.value)}
                   className="font-mono"
                 />
               </div>

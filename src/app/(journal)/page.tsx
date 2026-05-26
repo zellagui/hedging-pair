@@ -9,18 +9,16 @@ export default function HomePage() {
   const {
     trades,
     challenges,
+    pairs,
     identities,
     sessions,
-    activeIdentityId,
-    setActiveIdentityId,
   } = useTradingStore(
     useShallow((s) => ({
       trades: s.trades,
       challenges: s.challenges,
+      pairs: s.pairs,
       identities: s.identities,
       sessions: s.sessions,
-      activeIdentityId: s.activeIdentityId,
-      setActiveIdentityId: s.setActiveIdentityId,
     }))
   );
 
@@ -28,10 +26,9 @@ export default function HomePage() {
     <DashboardOverview
       trades={trades}
       challenges={challenges}
+      pairs={pairs}
       sessions={sessions}
       identities={identities}
-      activeIdentityId={activeIdentityId}
-      onWorkspaceChange={setActiveIdentityId}
     />
   );
 }
