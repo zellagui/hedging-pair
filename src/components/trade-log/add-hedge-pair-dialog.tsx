@@ -105,8 +105,8 @@ type Props = {
   prefill?: PrefillData | null;
   addTrade: (
     input: Omit<LogTrade, "id" | "createdAt" | "updatedAt">
-  ) => string | null;
-  linkPair: (propTradeId: string, personalTradeId: string) => string | null;
+  ) => Promise<string | null>;
+  linkPair: (propTradeId: string, personalTradeId: string) => Promise<string | null>;
 };
 
 function usdInputClass() {
@@ -347,7 +347,7 @@ function AddHedgePairDialogInner({
       signDisplay: "exceptZero",
     }).format(n);
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
     if (locked) {
@@ -386,7 +386,7 @@ function AddHedgePairDialogInner({
         notes,
         screenshot
       );
-      const propId = addTrade(propPayload);
+      const propId = await addTrade(propPayload);
       if (propId == null) {
         setSubmitError("Could not add prop leg.");
         return;
@@ -400,14 +400,14 @@ function AddHedgePairDialogInner({
         notes,
         screenshot
       );
-      const personalId = addTrade(personalPayload);
+      const personalId = await addTrade(personalPayload);
       if (personalId == null) {
         setSubmitError(
           "Prop saved; personal leg failed. Fix from the trade list if needed."
         );
         return;
       }
-      const linkId = linkPair(propId, personalId);
+      const linkId = await linkPair(propId, personalId);
       if (linkId == null) {
         setSubmitError("Could not link legs.");
         return;
@@ -461,7 +461,7 @@ function AddHedgePairDialogInner({
         hedgePlanId: prefill.hedgePlanId,
       } : undefined
     );
-    const propId = addTrade(propPayload);
+    const propId = await addTrade(propPayload);
     if (propId == null) {
       setSubmitError("Could not add prop leg.");
       return;
@@ -486,12 +486,12 @@ function AddHedgePairDialogInner({
         hedgePlanId: prefill.hedgePlanId,
       } : undefined
     );
-    const personalId = addTrade(personalPayload);
+    const personalId = await addTrade(personalPayload);
     if (personalId == null) {
       setSubmitError("Prop saved; personal leg failed.");
       return;
     }
-    const linkId = linkPair(propId, personalId);
+    const linkId = await linkPair(propId, personalId);
     if (linkId == null) {
       setSubmitError("Could not link legs.");
       return;

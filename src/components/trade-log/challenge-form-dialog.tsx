@@ -165,7 +165,7 @@ function ChallengeFormInner({
 
   const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId);
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
 
@@ -218,7 +218,7 @@ function ChallengeFormInner({
       return;
     }
 
-    const id = addChallenge({
+    const id = await addChallenge({
       identityId: wf,
       name: nameOverride.trim() || "",
       fee: num(fee, 0),

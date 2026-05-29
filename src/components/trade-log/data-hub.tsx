@@ -30,6 +30,7 @@ import {
 import {
   downloadTradeLogBackupJson,
   importTradeLogBackupJsonText,
+  migrateBackupToDatabase,
   useTradingStore,
 } from "@/models/trade-log/store";
 import {
@@ -73,6 +74,15 @@ export function DataHub() {
   const [pendingText, setPendingText] = useState<string | null>(null);
   const [pendingName, setPendingName] = useState<string | null>(null);
   const [importErr, setImportErr] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<string | null>(null);
+  const [migrationResult, setMigrationResult] = useState<{
+    identities: number;
+    challenges: number;
+    trades: number;
+    pairs: number;
+    sessions: number;
+    plans: number;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [cloudTokenDraft, setCloudTokenDraft] = useState(() =>
@@ -143,15 +153,23 @@ export function DataHub() {
       <div>
         <h2 className="text-xl font-semibold tracking-tight">Data</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Download your journal as one file, or load a file someone else exported.
-          The rest of the app updates immediately after you load.
+          Your journal data is automatically saved to Supabase. You can download backups 
+          or import data from other accounts. Changes are saved to the database immediately.
         </p>
       </div>
 
-      <Card>
+      <Card className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950">
         <CardHeader>
-          <CardTitle className="text-base">Cloud sync (Vercel)</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <span className="text-orange-600 dark:text-orange-400">⚠️</span>
+            Cloud sync (Vercel) - Legacy Feature
+          </CardTitle>
           <CardDescription>
+            <div className="rounded-md bg-orange-100 dark:bg-orange-900 p-2 mb-3">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                Your data now saves automatically to Supabase. Cloud sync is optional and will be removed in a future version.
+              </p>
+            </div>
             Live cloud file: <code className="text-xs">journal/main.json</code>. Older uploads
             like <code className="text-xs">trade-log-backup-*.json</code> are loaded once and
             migrated automatically. Set <code className="text-xs">journal_sync_secret</code> in
@@ -333,10 +351,16 @@ export function DataHub() {
       </Card>
 
       {supportsFolder ? (
-        <details className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
-          <summary className="cursor-pointer font-medium text-foreground">
-            Optional: save automatically to a folder (Chrome / Edge)
+        <details className="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950 px-4 py-3 text-sm">
+          <summary className="cursor-pointer font-medium text-foreground flex items-center gap-2">
+            <span className="text-orange-600 dark:text-orange-400">⚠️</span>
+            Advanced: Local folder sync (deprecated)
           </summary>
+          <div className="rounded-md bg-orange-100 dark:bg-orange-900 p-2 mt-2 mb-3">
+            <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+              Your data now saves automatically to Supabase. Folder sync is optional and will be removed in a future version.
+            </p>
+          </div>
           <p className="mt-2 text-muted-foreground">
             Pick a folder—if it lives in Dropbox or similar, you can share that
             folder with a colleague. Last save wins if you both edit.
@@ -409,59 +433,96 @@ export function DataHub() {
             setPendingText(null);
             setPendingName(null);
             setImportErr(null);
+            setImportProgress(null);
+            setMigrationResult(null);
           }
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Replace your journal?</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>
-                Everything in this browser copy will be replaced: workspaces,
-                challenges, trades, pairs, sessions.
-                {pendingName != null ? (
-                  <>
-                    {" "}
-                    File:{" "}
-                    <span className="font-medium text-foreground">
-                      {pendingName}
-                    </span>
-                  </>
+            <AlertDialogTitle>Import journal to database?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  This will import your backup data to your Supabase account database.
+                  {pendingName != null ? (
+                    <>
+                      {" "}
+                      File:{" "}
+                      <span className="font-medium text-foreground">
+                        {pendingName}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+                {importProgress != null ? (
+                  <p className="text-blue-600 dark:text-blue-400">{importProgress}</p>
                 ) : null}
-              </p>
-              {importErr != null ? (
-                <p className="text-destructive">{importErr}</p>
-              ) : null}
+                {migrationResult != null ? (
+                  <div className="rounded-md bg-green-50 p-3 text-sm dark:bg-green-950">
+                    <p className="font-medium text-green-800 dark:text-green-200">
+                      Migration completed successfully!
+                    </p>
+                    <ul className="mt-1 text-green-700 dark:text-green-300">
+                      <li>• {migrationResult.identities} workspace{migrationResult.identities === 1 ? "" : "s"}</li>
+                      <li>• {migrationResult.challenges} challenge{migrationResult.challenges === 1 ? "" : "s"}</li>
+                      <li>• {migrationResult.trades} trade{migrationResult.trades === 1 ? "" : "s"}</li>
+                      <li>• {migrationResult.pairs} pair{migrationResult.pairs === 1 ? "" : "s"}</li>
+                      <li>• {migrationResult.sessions} session{migrationResult.sessions === 1 ? "" : "s"}</li>
+                      <li>• {migrationResult.plans} plan{migrationResult.plans === 1 ? "" : "s"}</li>
+                    </ul>
+                  </div>
+                ) : null}
+                {importErr != null ? (
+                  <p className="text-destructive">{importErr}</p>
+                ) : null}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
             <Button
               type="button"
-              disabled={busy || pendingText == null || pendingText === ""}
+              disabled={busy || pendingText == null || pendingText === "" || migrationResult != null}
               onClick={() =>
                 void run(async () => {
                   if (pendingText == null) return;
                   setImportErr(null);
-                  const r = await importTradeLogBackupJsonText(pendingText);
+                  setImportProgress("Migrating data to database...");
+                  setMigrationResult(null);
+                  
+                  const r = await migrateBackupToDatabase(pendingText);
+                  setImportProgress(null);
+                  
                   if (r.ok) {
-                    setImportOpen(false);
-                    setPendingText(null);
-                    setPendingName(null);
-                    router.refresh();
-                    if (typeof window !== "undefined") {
-                      window.alert(
-                        "Journal loaded. Your data is saved in this browser for next time."
-                      );
-                    }
+                    setMigrationResult(r.counts);
+                    // Refresh the store from server after successful migration
+                    const hydrate = useTradingStore.getState().hydrate;
+                    await hydrate();
                   } else {
                     setImportErr(r.error);
                   }
                 })
               }
             >
-              Load journal
+              {migrationResult != null ? "Import Complete" : "Import to Database"}
             </Button>
+            
+            {migrationResult != null ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setImportOpen(false);
+                  setPendingText(null);
+                  setPendingName(null);
+                  setMigrationResult(null);
+                  router.refresh();
+                }}
+              >
+                Done
+              </Button>
+            ) : null}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

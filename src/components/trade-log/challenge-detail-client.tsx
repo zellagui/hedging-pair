@@ -590,8 +590,8 @@ export function ChallengeDetailClient({
         <ChallengePhasePlanner
           challenge={c}
           plans={challengePlans}
-          onSavePlan={(planData) => {
-            const planId = addPlan(planData);
+          onSavePlan={async (planData) => {
+            const planId = await addPlan(planData);
             if (planId) {
               setFeedback("Plan saved successfully.");
             }

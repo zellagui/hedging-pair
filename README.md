@@ -26,17 +26,31 @@ git remote add origin https://github.com/YOUR_USER/hedging-pair.git
 git push -u origin main
 ```
 
+## Data Storage
+
+Your journal data is automatically saved to Supabase (PostgreSQL). Each user's data is isolated via Row Level Security (RLS).
+
+### First-Time Setup
+
+1. Create a Supabase project at https://supabase.com
+2. Apply the database migration from `supabase/migrations/20260529001208_initial_schema.sql`
+3. Configure Supabase Auth redirect URLs for your production domain
+
+See [`MIGRATION_INSTRUCTIONS.md`](MIGRATION_INSTRUCTIONS.md) and [`README_SUPABASE.md`](README_SUPABASE.md) for details.
+
 ## Deploy on Vercel
 
 Import this repo in [Vercel](https://vercel.com/new) (framework: Next.js). For a custom domain, add it under Project → **Settings** → **Domains** and set the DNS records Vercel shows at your registrar.
 
-See [Next.js deployment](https://nextjs.org/docs/app/building-your-application/deploying) for details.
+Set these environment variables in your Vercel project:
 
-### Cloud sync (Vercel Blob)
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+```
 
-1. In the Vercel project, open **Storage** and connect a Blob store (e.g. `hedging-pair-blob`).
-2. Under **Settings → Environment Variables**, set `journal_sync_secret` to a long random string (Production + Preview). Use `BLOB_READ_WRITE_TOKEN` from the linked Blob store (`blob_read_write_token` or `blob_token` also work). Do not rely on a custom `blob_token` unless it is the real read-write token value.
-3. Redeploy after any env change.
-4. In the app, go to **Data → Cloud sync**, paste the same secret, and **Save token**. The live file is `journal/main.json`. An older `trade-log-backup-*.json` in Storage is imported once and copied to `journal/main.json`. Use **Pull from cloud** to overwrite this browser from Blob; **Sync now** uploads local data.
+**Do not add `SUPABASE_SERVICE_ROLE_KEY` to Vercel** unless you need server-side admin operations. It bypasses Row Level Security.
 
 Copy [`.env.example`](.env.example) to `.env.local` for local development with the same variables.
+
+See [Next.js deployment](https://nextjs.org/docs/app/building-your-application/deploying) for details.

@@ -218,7 +218,7 @@ function TradeFormInner({
       ? `Realized (est.): ${formatMoney(computeRealizedPnl(previewDraft))}`
       : `Unrealized (est.): ${formatMoney(computeUnrealizedPnl(previewDraft))}`);
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
     if (readOnlySession) return;
@@ -239,7 +239,7 @@ function TradeFormInner({
       sessionId === "__none__" ? null : sessionId;
 
     if (createSession) {
-      const id = addSession({
+      const id = await addSession({
         date: newSessionDate,
         notes: newSessionNotes.trim(),
       });
@@ -288,7 +288,7 @@ function TradeFormInner({
     if (existing) {
       updateTrade(existing.id, payload);
     } else {
-      const res = addTrade(payload);
+      const res = await addTrade(payload);
       if (res == null) {
         setFormError(
           "Could not add trade. The session may be closed, or this challenge may no longer accept prop legs."

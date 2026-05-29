@@ -170,14 +170,23 @@ export function createTradeLogPersistStorage(): StateStorage {
     },
     removeItem: () => {
       if (typeof window === "undefined") return;
-      localStorage.removeItem(STORAGE_KEY_SESSIONS);
-      localStorage.removeItem(STORAGE_KEY_TRADES);
-      localStorage.removeItem(STORAGE_KEY_PAIRS);
-      localStorage.removeItem(STORAGE_KEY_CHALLENGES);
-      localStorage.removeItem(STORAGE_KEY_IDENTITIES);
-      localStorage.removeItem(STORAGE_KEY_PLANS);
-      localStorage.removeItem(STORAGE_KEY_ACTIVE_IDENTITY_ID);
-      localStorage.removeItem(TRADE_LOG_ROOT_KEY);
+      clearLegacyTradeLogLocalStorage();
     },
   };
+}
+
+/** Remove old localStorage journal keys so they cannot conflict with Supabase-backed state. */
+export function clearLegacyTradeLogLocalStorage() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(STORAGE_KEY_SESSIONS);
+  localStorage.removeItem(STORAGE_KEY_TRADES);
+  localStorage.removeItem(STORAGE_KEY_PAIRS);
+  localStorage.removeItem(STORAGE_KEY_CHALLENGES);
+  localStorage.removeItem(STORAGE_KEY_IDENTITIES);
+  localStorage.removeItem(STORAGE_KEY_PLANS);
+  localStorage.removeItem(STORAGE_KEY_ACTIVE_IDENTITY_ID);
+  localStorage.removeItem(TRADE_LOG_ROOT_KEY);
+  localStorage.removeItem("journal-root");
+  localStorage.removeItem("accounts");
+  localStorage.removeItem("trade-log-cloud-sync-token");
 }

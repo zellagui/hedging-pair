@@ -31,6 +31,7 @@ export function WorkspaceDeleteDialog({
 }: WorkspaceDeleteDialogProps) {
   const [confirmText, setConfirmText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   
   const { deleteIdentity, challenges, trades, identities } = useTradingStore(
     useShallow((s) => ({
@@ -56,11 +57,14 @@ export function WorkspaceDeleteDialog({
     if (!confirmValid || !canDelete) return;
 
     setIsDeleting(true);
+    setDeleteError(null);
     try {
-      const success = deleteIdentity(workspaceId);
+      const success = await deleteIdentity(workspaceId);
       if (success) {
         onOpenChange(false);
         setConfirmText("");
+      } else {
+        setDeleteError("Could not delete this workspace. Please try again.");
       }
     } finally {
       setIsDeleting(false);
@@ -70,6 +74,7 @@ export function WorkspaceDeleteDialog({
   const handleCancel = () => {
     onOpenChange(false);
     setConfirmText("");
+    setDeleteError(null);
   };
 
   if (!canDelete) {
@@ -93,37 +98,52 @@ export function WorkspaceDeleteDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setConfirmText("");
+          setDeleteError(null);
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Delete Workspace</DialogTitle>
-          <DialogDescription className="space-y-3">
-            <div>
-              Are you sure you want to delete the workspace <strong>"{workspaceName}"</strong>?
+          <DialogDescription asChild>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>
+                Are you sure you want to delete the workspace{" "}
+                <strong>&quot;{workspaceName}&quot;</strong>?
+              </p>
+              {challengesToDelete > 0 || tradesToDelete > 0 ? (
+                <div className="rounded-md bg-destructive/10 p-3 text-destructive">
+                  <strong>Permanent deletion:</strong> This will remove{" "}
+                  {challengesToDelete > 0 && (
+                    <>
+                      {challengesToDelete} challenge
+                      {challengesToDelete !== 1 ? "s" : ""}
+                    </>
+                  )}
+                  {challengesToDelete > 0 && tradesToDelete > 0 && ", "}
+                  {tradesToDelete > 0 && (
+                    <>
+                      {tradesToDelete} trade{tradesToDelete !== 1 ? "s" : ""}
+                    </>
+                  )}
+                  , and all linked hedge pairs. Other workspaces are not affected.
+                </div>
+              ) : (
+                <p>
+                  This workspace has no challenges or trades. Other workspaces are
+                  not affected.
+                </p>
+              )}
+              {deleteError != null ? (
+                <p className="text-destructive">{deleteError}</p>
+              ) : null}
             </div>
-            {challengesToDelete > 0 || tradesToDelete > 0 ? (
-              <div className="rounded-md bg-destructive/10 p-3 text-destructive">
-                <strong>Permanent deletion:</strong> This will remove{" "}
-                {challengesToDelete > 0 && (
-                  <>
-                    {challengesToDelete} challenge
-                    {challengesToDelete !== 1 ? "s" : ""}
-                  </>
-                )}
-                {challengesToDelete > 0 && tradesToDelete > 0 && ", "}
-                {tradesToDelete > 0 && (
-                  <>
-                    {tradesToDelete} trade{tradesToDelete !== 1 ? "s" : ""}
-                  </>
-                )}
-                , and all linked hedge pairs. Other workspaces are not affected.
-              </div>
-            ) : (
-              <div className="text-muted-foreground">
-                This workspace has no challenges or trades. Other workspaces are
-                not affected.
-              </div>
-            )}
           </DialogDescription>
         </DialogHeader>
 

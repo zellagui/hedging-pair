@@ -129,7 +129,7 @@ export type ChallengeHedgePairsTableProps = {
   challengeId: string;
   updateTrade: (id: string, patch: Partial<Omit<LogTrade, "id">>) => void;
   updatePair: (id: string, patch: Partial<Omit<HedgePair, "id">>) => void;
-  deleteHedgePairCascade: (pairId: string) => boolean;
+  deleteHedgePairCascade: (pairId: string) => Promise<boolean>;
   unlinkDisabled?: boolean;
   onRequestLogPhase?: () => void;
 };
